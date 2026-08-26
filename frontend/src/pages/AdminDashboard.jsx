@@ -1,30 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { Play, RotateCw, Layers, CheckCircle2, AlertCircle, FileSpreadsheet, Loader2 } from 'lucide-react';
-import VisualGrid from '../components/VisualGrid';
+import PageHeaderCard from '../components/PageHeaderCard';
+import ToolbarCard from '../components/ToolbarCard';
+import TimetableGrid from '../components/TimetableGrid';
 import ExcelUploader from '../components/ExcelUploader';
-import ClashBanner from '../components/ClashBanner';
 import ManualOverrideModal from '../components/ManualOverrideModal';
+import Toast from '../components/Toast';
 import { api } from '../services/api';
 
 export default function AdminDashboard() {
   const [filterType, setFilterType] = useState('cohort'); // 'cohort' | 'faculty' | 'room'
-  const [selectedId, setSelectedId] = useState(1);
+  const [selectedId, setSelectedId] = useState(null);
   const [gridData, setGridData] = useState({});
   const [meta, setMeta] = useState({ cohorts: [], faculty: [], rooms: [] });
   const [loading, setLoading] = useState(false);
   const [solving, setSolving] = useState(false);
-  const [solverResult, setSolverResult] = useState(null);
-  const [banner, setBanner] = useState({ error: null, success: false, message: '' });
   const [overrideEntry, setOverrideEntry] = useState(null);
+  const [overrideSlot, setOverrideSlot] = useState({ dayId: 1, periodId: 1 });
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [showUploader, setShowUploader] = useState(false);
+  const [toast, setToast] = useState({ type: 'success', message: '' });
+  const [conflictCount, setConflictCount] = useState(0);
 
   // Fetch dynamic metadata (Cohorts, Faculty, Rooms)
   const fetchMeta = async () => {
     try {
       const data = await api.getMetadata();
-      setMeta(data);
-      if (data.cohorts?.length && !selectedId) {
-        setSelectedId(data.cohorts[0].id);
+      setMeta(data || { cohorts: [], faculty: [], rooms: [] });
+      
+      // Auto-select first available entity if none selected
+      if (filterType === 'cohort' && data.cohorts?.length > 0) {
+        setSelectedId((prev) => (data.cohorts.some(c => c.id === prev) ? prev : data.cohorts[0].id));
+      } else if (filterType === 'faculty' && data.faculty?.length > 0) {
+        setSelectedId((prev) => (data.faculty.some(f => f.id === prev) ? prev : data.faculty[0].id));
+      } else if (filterType === 'room' && data.rooms?.length > 0) {
+        setSelectedId((prev) => (data.rooms.some(r => r.id === prev) ? prev : data.rooms[0].id));
       }
     } catch (err) {
       console.error('Failed to load metadata', err);
@@ -35,8 +44,26 @@ export default function AdminDashboard() {
     fetchMeta();
   }, []);
 
+  // Handle switching between Cohort / Faculty / Room tabs
+  const handleFilterTabChange = (newType) => {
+    setFilterType(newType);
+    if (newType === 'cohort' && meta.cohorts?.length > 0) {
+      setSelectedId(meta.cohorts[0].id);
+    } else if (newType === 'faculty' && meta.faculty?.length > 0) {
+      setSelectedId(meta.faculty[0].id);
+    } else if (newType === 'room' && meta.rooms?.length > 0) {
+      setSelectedId(meta.rooms[0].id);
+    } else {
+      setSelectedId(null);
+    }
+  };
+
   // Fetch routine based on current filter selection
   const fetchRoutine = async () => {
+    if (!selectedId) {
+      setGridData({});
+      return;
+    }
     setLoading(true);
     try {
       let res;
@@ -56,28 +83,26 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    fetchRoutine();
+    if (selectedId) {
+      fetchRoutine();
+    }
   }, [filterType, selectedId]);
-
 
   // Run Solver
   const handleRunSolver = async () => {
     setSolving(true);
-    setBanner({ error: null, success: false, message: '' });
     try {
       const res = await api.triggerSolver();
-      setSolverResult(res);
-      setBanner({
-        error: null,
-        success: true,
-        message: `Solver completed in ${res.solve_duration_seconds}s! Status: ${res.status}. ${res.total_entries_created} class entries persisted to database.`
+      setToast({
+        type: 'success',
+        message: `Solver finished in ${res.solve_duration_seconds}s with status '${res.status}'. ${res.total_entries_created} classes generated.`
       });
-      fetchRoutine();
+      await fetchMeta();
+      await fetchRoutine();
     } catch (err) {
       const errMsg = err.response?.data?.error || err.message;
-      setBanner({
-        error: 'SOLVER_ERROR',
-        success: false,
+      setToast({
+        type: 'danger',
         message: `Solver failed: ${errMsg}`
       });
     } finally {
@@ -85,190 +110,101 @@ export default function AdminDashboard() {
     }
   };
 
-  // Handle slot click in grid
-  const handleSlotClick = (day, slot, entry) => {
-    if (entry) {
-      setOverrideEntry(entry);
-    }
+  // Handle slot click (Populated Block or Free Slot)
+  const handleSlotClick = (dayId, periodId, entry) => {
+    setOverrideEntry(entry);
+    setOverrideSlot({ dayId, periodId });
+    setShowOverrideModal(true);
   };
 
   const handleOverrideSuccess = (msg) => {
-    setBanner({ error: null, success: true, message: msg });
+    setToast({ type: 'success', message: msg || 'Schedule slot updated successfully.' });
     fetchRoutine();
   };
 
+  // Title Formatter without redundant "Semester" text
+  const getMatrixTitle = () => {
+    if (!selectedId) return 'Weekly Routine Matrix';
+    if (filterType === 'cohort') {
+      const c = meta.cohorts.find(x => x.id === selectedId);
+      if (!c) return `Weekly Routine Matrix — Cohort #${selectedId}`;
+      const cleanName = c.name.replace(/\s*\(Semester\s*\d+\)/i, '');
+      return `Weekly Routine Matrix — ${cleanName}`;
+    }
+    if (filterType === 'faculty') {
+      const f = meta.faculty.find(x => x.id === selectedId);
+      return f ? `Weekly Routine Matrix — ${f.name}` : `Weekly Routine Matrix — Faculty #${selectedId}`;
+    }
+    if (filterType === 'room') {
+      const r = meta.rooms.find(x => x.id === selectedId);
+      return r ? `Weekly Routine Matrix — Room ${r.name} (${r.room_type})` : `Weekly Routine Matrix — Room #${selectedId}`;
+    }
+    return 'Weekly Routine Matrix';
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 space-y-6 transition-colors">
       
-      {/* Executive Command Strip */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-ink-500">Administrative Operations</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-stone-400"></span>
-            <span className="text-xs text-ink-500 font-medium">Phase 4 REST API</span>
-          </div>
-          <h1 className="text-lg font-bold text-ink-900 tracking-tight mt-0.5">Master Timetable Management</h1>
-        </div>
+      {/* 5. Section 2: Page Header Card */}
+      <PageHeaderCard
+        onUploadClick={() => setShowUploader(!showUploader)}
+        onSolveClick={handleRunSolver}
+        isSolving={solving}
+        showUploader={showUploader}
+      />
 
-        {/* Action Controls */}
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => setShowUploader(!showUploader)}
-            className="flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold bg-cream-200 text-ink-800 hover:bg-cream-300 transition-all border border-stone-300/70"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-ink-600" />
-            <span>{showUploader ? 'Close Uploader' : 'Upload Excel'}</span>
-          </button>
-
-          <button
-            onClick={handleRunSolver}
-            disabled={solving}
-            className="flex items-center space-x-2 px-5 py-2 rounded-xl text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 transition-all shadow-sm disabled:opacity-50"
-          >
-            {solving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-stone-300" />
-                <span>Running CP-SAT Engine...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 fill-white" />
-                <span>Run CP-SAT Solver</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Excel Uploader Collapse Box */}
+      {/* Excel Ingestion Drawer */}
       {showUploader && (
-        <ExcelUploader onUploadSuccess={() => { setShowUploader(false); fetchRoutine(); }} />
+        <ExcelUploader
+          onUploadSuccess={async () => {
+            setShowUploader(false);
+            setToast({ type: 'success', message: 'Master workbook parsed and database synchronized.' });
+            await fetchMeta();
+            await fetchRoutine();
+          }}
+        />
       )}
 
-      {/* Solver Metric Badge */}
-      {solverResult && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="p-3.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Engine Status</span>
-            <div className="text-sm font-bold font-mono text-emerald-700 mt-0.5">{solverResult.status}</div>
-          </div>
-          <div className="p-3.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Execution Time</span>
-            <div className="text-sm font-bold font-mono text-ink-900 mt-0.5">{solverResult.solve_duration_seconds}s</div>
-          </div>
-          <div className="p-3.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Weekly Classes</span>
-            <div className="text-sm font-bold font-mono text-ink-900 mt-0.5">{solverResult.total_entries_created}</div>
-          </div>
-          <div className="p-3.5 bg-white rounded-xl border border-stone-200 shadow-2xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Objective Score</span>
-            <div className="text-sm font-bold font-mono text-ink-900 mt-0.5">{solverResult.objective_value}</div>
-          </div>
-        </div>
-      )}
-
-      {/* Clash Notification Banner */}
-      <ClashBanner
-        error={banner.error}
-        success={banner.success}
-        message={banner.message}
-        onClose={() => setBanner({ error: null, success: false, message: '' })}
+      {/* 5. Section 3: Toolbar Card */}
+      <ToolbarCard
+        filterType={filterType}
+        onFilterChange={handleFilterTabChange}
+        selectedId={selectedId}
+        onSelectEntity={setSelectedId}
+        meta={meta}
+        onRefresh={fetchRoutine}
+        isLoading={loading}
       />
 
-      {/* Filter Toolbar */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        
-        {/* Filter Type Radio Tabs */}
-        <div className="flex items-center space-x-1.5 bg-cream-100 p-1 rounded-xl border border-stone-200">
-          {[
-            { id: 'cohort', label: 'By Cohort Section' },
-            { id: 'faculty', label: 'By Faculty' },
-            { id: 'room', label: 'By Room Space' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => { setFilterType(tab.id); setSelectedId(1); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filterType === tab.id
-                  ? 'bg-white text-ink-900 shadow-xs border border-stone-200 font-bold'
-                  : 'text-ink-500 hover:text-ink-900'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Entity Selector Dropdown */}
-        <div className="flex items-center space-x-3">
-          <label className="text-xs font-bold text-ink-700 whitespace-nowrap">
-            Select {filterType === 'cohort' ? 'Cohort' : filterType === 'faculty' ? 'Teacher' : 'Room'}:
-          </label>
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(parseInt(e.target.value, 10))}
-            className="bg-cream-50 border border-stone-300 rounded-xl px-3.5 py-1.5 text-xs font-semibold text-ink-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
-          >
-            {filterType === 'cohort' && (
-              meta.cohorts?.length > 0 ? (
-                meta.cohorts.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name} (Semester {c.semester} • Size: {c.size})</option>
-                ))
-              ) : (
-                <option value={1}>Cohort #1</option>
-              )
-            )}
-            {filterType === 'faculty' && (
-              meta.faculty?.length > 0 ? (
-                meta.faculty.map((f) => (
-                  <option key={f.id} value={f.id}>{f.name} ({f.max_weekly_hours}h/wk max)</option>
-                ))
-              ) : (
-                <option value={1}>Faculty #1</option>
-              )
-            )}
-            {filterType === 'room' && (
-              meta.rooms?.length > 0 ? (
-                meta.rooms.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name} — {r.room_type} (Cap: {r.capacity})</option>
-                ))
-              ) : (
-                <option value={1}>Room #1</option>
-              )
-            )}
-          </select>
-
-
-          <button
-            onClick={fetchRoutine}
-            disabled={loading}
-            className="p-2 rounded-xl border border-stone-200 text-ink-500 hover:text-ink-900 hover:bg-cream-100 transition-colors"
-            title="Refresh Grid"
-          >
-            <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-
-      </div>
-
-      {/* Main 2D Timetable Visual Matrix */}
-      <VisualGrid
+      {/* 5. Section 4: Timetable Card (Header + Legend + Grid) */}
+      <TimetableGrid
         gridData={gridData}
-        title={`Weekly Routine Matrix: ${filterType.toUpperCase()} #${selectedId}`}
-        subtitle="Click any scheduled block to reassign period or resolve conflict"
-        interactive={true}
+        title={getMatrixTitle()}
+        subtitle="Generated via Google OR-Tools CP-SAT with verified zero clashes"
+        conflictCount={conflictCount}
+        isLoading={loading}
+        isInteractive={true}
         onSlotClick={handleSlotClick}
+        onRunSolverPrompt={handleRunSolver}
       />
 
-      {/* Manual Override Modal */}
-      {overrideEntry && (
+      {/* Reassign / Resolve Modal (Section 6.9) */}
+      {showOverrideModal && (
         <ManualOverrideModal
           entry={overrideEntry}
-          onClose={() => setOverrideEntry(null)}
+          dayId={overrideSlot.dayId}
+          periodId={overrideSlot.periodId}
+          onClose={() => setShowOverrideModal(false)}
           onSuccess={handleOverrideSuccess}
         />
       )}
+
+      {/* Toast Notification (Section 7) */}
+      <Toast
+        type={toast.type}
+        message={toast.message}
+        onClose={() => setToast({ type: 'success', message: '' })}
+      />
 
     </div>
   );

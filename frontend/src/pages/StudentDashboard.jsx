@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { GraduationCap, Printer, RotateCw, BookOpen, Sparkles, CheckCircle } from 'lucide-react';
-import VisualGrid from '../components/VisualGrid';
+import TimetableGrid from '../components/TimetableGrid';
 import { api } from '../services/api';
 
 export default function StudentDashboard() {
-  const [selectedCohort, setSelectedCohort] = useState(1);
+  const [selectedCohort, setSelectedCohort] = useState(null);
   const [cohorts, setCohorts] = useState([]);
   const [gridData, setGridData] = useState({});
   const [loading, setLoading] = useState(false);
@@ -39,82 +38,63 @@ export default function StudentDashboard() {
   };
 
   useEffect(() => {
-    fetchStudentRoutine();
+    if (selectedCohort) {
+      fetchStudentRoutine();
+    }
   }, [selectedCohort]);
 
+  const activeCohort = cohorts.find(c => c.id === selectedCohort);
+  const cleanTitle = activeCohort ? activeCohort.name.replace(/\s*\(Semester\s*\d+\)/i, '') : 'Student Routine';
+
   return (
-    <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 space-y-6 transition-colors">
       
-      {/* Student Welcome & Section Selector */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Student Top Control Card */}
+      <div className="bg-white dark:bg-[#14161C] border border-[#E5E7EB] dark:border-[#2A2D37] rounded-xl p-6 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-ink-500">Student Academic Portal</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-stone-400"></span>
-            <span className="text-xs text-ink-500 font-medium">NEP 2020 Compliant</span>
+          <div className="flex items-center space-x-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em] text-[#9CA3AF] dark:text-[#6B7280]">
+            <span>STUDENT ACADEMIC PORTAL</span>
+            <span>•</span>
+            <span className="text-[#4F46E5] dark:text-[#6366F1]">NEP 2020 Compliant</span>
           </div>
-          <h1 className="text-lg font-bold text-ink-900 tracking-tight mt-0.5">My Class Routine & Electives</h1>
+          <h1 className="text-xl font-semibold text-[#111827] dark:text-[#F3F4F6] mt-1">
+            Weekly Class Routine & Enrolled Electives
+          </h1>
+          <p className="text-sm text-[#4B5563] dark:text-[#A1A6B3] mt-0.5">
+            Clash-free schedule showing section core courses and registered multi-disciplinary electives.
+          </p>
         </div>
 
-        {/* Section Selector & Print */}
-        <div className="flex items-center space-x-3 no-print">
-          <label className="text-xs font-bold text-ink-700 whitespace-nowrap">
+        {/* Section Selector */}
+        <div className="flex items-center space-x-3 shrink-0 no-print">
+          <label className="text-sm font-normal text-[#4B5563] dark:text-[#A1A6B3] whitespace-nowrap">
             Select Section:
           </label>
           <select
-            value={selectedCohort}
+            value={selectedCohort || ''}
             onChange={(e) => setSelectedCohort(parseInt(e.target.value, 10))}
-            className="bg-cream-50 border border-stone-300 rounded-xl px-3.5 py-1.5 text-xs font-semibold text-ink-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
+            className="h-10 px-3 min-w-[220px] bg-white dark:bg-[#14161C] border border-[#E5E7EB] dark:border-[#2A2D37] rounded-lg text-sm text-[#111827] dark:text-[#F3F4F6] focus:outline-none focus:ring-2 focus:ring-[#4F46E5] cursor-pointer"
           >
             {cohorts.length > 0 ? (
               cohorts.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} (Semester {c.semester})
+                  {c.name}
                 </option>
               ))
             ) : (
-              <option value={1}>Cohort #1</option>
+              <option value="">No Sections Available</option>
             )}
           </select>
-
-
-          <button
-            onClick={() => window.print()}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-cream-200 text-ink-800 hover:bg-cream-300 transition-all border border-stone-300/70"
-          >
-            <Printer className="w-3.5 h-3.5 text-ink-600" />
-            <span>Print Routine</span>
-          </button>
         </div>
       </div>
 
-      {/* Routine Legend */}
-      <div className="flex flex-wrap items-center gap-4 text-[11px] font-medium text-ink-600 bg-cream-50 p-3 rounded-xl border border-stone-200/70 no-print">
-        <span className="font-bold text-ink-900 uppercase tracking-wider text-[10px]">Legend:</span>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-3 h-3 rounded bg-white border border-stone-300"></span>
-          <span>Core Lecture</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></span>
-          <span>Practical Lab Session</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-3 h-3 rounded bg-amber-100 border border-amber-300"></span>
-          <span>NEP Elective Course</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-3 h-3 rounded bg-cream-300 border border-stone-300"></span>
-          <span>Recess Break</span>
-        </div>
-      </div>
-
-      {/* 2D Timetable Visual Matrix */}
-      <VisualGrid
+      {/* Timetable Grid */}
+      <TimetableGrid
         gridData={gridData}
-        title={`Academic Routine: Section ${selectedCohort}`}
-        subtitle="Weekly clash-free timetable showing core subjects and individually registered electives"
-        interactive={false}
+        title={`Academic Routine — ${cleanTitle}`}
+        subtitle="Individual section schedule with guaranteed zero room and teacher conflicts"
+        isLoading={loading}
+        isInteractive={false}
       />
 
     </div>

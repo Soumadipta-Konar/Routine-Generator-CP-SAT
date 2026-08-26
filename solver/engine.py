@@ -148,10 +148,9 @@ class ScheduleSolver:
                 block_counter += 1
 
         # Decision Variables: y[b, cg_idx, r_idx]
-        # b: block index
-        # cg_idx: contiguous slot group index for block size
-        # r_idx: room index
         self.y = {}
+        room_slot_vars = {}
+        b_slot_vars = {}
         
         # Pre-generate valid contiguous slot groups by size
         self.slot_groups_by_size = {}
@@ -186,25 +185,28 @@ class ScheduleSolver:
 
             valid_groups = []
             for cg in self.slot_groups_by_size[b["size"]]:
-                # Check if group contains any unavailable slot for faculty
-                overlap_unavail = False
-                for s in cg:
-                    if (s["day"], s["slot_number"]) in unavail_slots:
-                        overlap_unavail = True
-                        break
-                if not overlap_unavail:
+                if not any((s["day"], s["slot_number"]) in unavail_slots for s in cg):
                     valid_groups.append(cg)
             
             b["valid_groups"] = valid_groups
+            b_slot_vars[b_id] = {}
 
-            # Define variables
+            # Define variables and map to slot lookups in O(1)
             for cg_idx, cg in enumerate(valid_groups):
-                # Calculate unpreferred slot count in this slot group
-                unpref_count = sum(1 for s in cg if (s["day"], s["slot_number"]) in unpref_slots)
-                
                 for r in allowed_rooms:
                     r_id = r["id"]
-                    self.y[(b_id, cg_idx, r_id)] = self.model.NewBoolVar(f"y_b{b_id}_g{cg_idx}_r{r_id}")
+                    var = self.model.NewBoolVar(f"y_b{b_id}_g{cg_idx}_r{r_id}")
+                    self.y[(b_id, cg_idx, r_id)] = var
+                    for s in cg:
+                        key = (r_id, s["day"], s["slot_id"])
+                        if key not in room_slot_vars:
+                            room_slot_vars[key] = []
+                        room_slot_vars[key].append(var)
+
+                        b_key = (s["day"], s["slot_id"])
+                        if b_key not in b_slot_vars[b_id]:
+                            b_slot_vars[b_id][b_key] = []
+                        b_slot_vars[b_id][b_key].append(var)
 
 
         # --- Hard Constraints ---
@@ -219,9 +221,7 @@ class ScheduleSolver:
             if vars_list:
                 self.model.Add(sum(vars_list) == 1)
             else:
-                # No valid slots or rooms, schedule is infeasible
                 print(f"[WARNING] Block {b_id} (Subject {b['subject']['code']}) has no allowed rooms or valid slots.")
-                # We can still add a dummy solver check, but this will fail.
 
         # Helper: slot occupancy for block b at (day, slot_id) regardless of room
         self.X_slot = {}
@@ -230,11 +230,7 @@ class ScheduleSolver:
             for s in self.academic_slots:
                 day = s["day"]
                 s_id = s["slot_id"]
-                slot_vars = []
-                for cg_idx, cg in enumerate(b["valid_groups"]):
-                    if any(x["day"] == day and x["slot_id"] == s_id for x in cg):
-                        for r in b["allowed_rooms"]:
-                            slot_vars.append(self.y[(b_id, cg_idx, r["id"])])
+                slot_vars = b_slot_vars[b_id].get((day, s_id), [])
                 if slot_vars:
                     self.X_slot[(b_id, day, s_id)] = self.model.NewBoolVar(f"X_slot_b{b_id}_d{day}_s{s_id}")
                     self.model.Add(self.X_slot[(b_id, day, s_id)] == sum(slot_vars))
@@ -242,50 +238,61 @@ class ScheduleSolver:
                     self.X_slot[(b_id, day, s_id)] = 0
 
         # 2. Room Clash Prevention: At most one block in each room at each slot
-        for r in self.rooms:
-            r_id = r["id"]
-            for s in self.academic_slots:
-                day = s["day"]
-                s_id = s["slot_id"]
-                room_vars = []
-                for b in self.blocks:
-                    b_id = b["block_id"]
-                    for cg_idx, cg in enumerate(b["valid_groups"]):
-                        if any(x["day"] == day and x["slot_id"] == s_id for x in cg):
-                            if (b_id, cg_idx, r_id) in self.y:
-                                room_vars.append(self.y[(b_id, cg_idx, r_id)])
-                if room_vars:
-                    self.model.Add(sum(room_vars) <= 1)
+        for vars_list in room_slot_vars.values():
+            if len(vars_list) > 1:
+                self.model.Add(sum(vars_list) <= 1)
 
+        # Pre-group blocks by entity for fast constraint building
+        blocks_by_faculty = {}
+        blocks_by_cohort = {}
+        for b in self.blocks:
+            f_id = b["workload"]["faculty_id"]
+            if f_id not in blocks_by_faculty:
+                blocks_by_faculty[f_id] = []
+            blocks_by_faculty[f_id].append(b)
+
+            c_id = b["workload"].get("cohort_id")
+            if c_id is not None:
+                if c_id not in blocks_by_cohort:
+                    blocks_by_cohort[c_id] = []
+                blocks_by_cohort[c_id].append(b)
 
         # 3. Faculty Clash Prevention: At most one class for each faculty member at each slot
         for f in self.faculty:
             f_id = f["id"]
+            f_blocks = blocks_by_faculty.get(f_id, [])
+            if len(f_blocks) <= 1:
+                continue
             for s in self.academic_slots:
                 day = s["day"]
                 s_id = s["slot_id"]
-                fac_vars = []
-                for b in self.blocks:
-                    if b["workload"]["faculty_id"] == f_id:
-                        expr = self.X_slot[(b["block_id"], day, s_id)]
-                        if isinstance(expr, cp_model.LinearExpr) or expr != 0:
-                            fac_vars.append(expr)
-                if fac_vars:
+                fac_vars = [
+                    self.X_slot[(b["block_id"], day, s_id)]
+                    for b in f_blocks
+                    if (b["block_id"], day, s_id) in self.X_slot and (
+                        isinstance(self.X_slot[(b["block_id"], day, s_id)], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s_id)] != 0
+                    )
+                ]
+                if len(fac_vars) > 1:
                     self.model.Add(sum(fac_vars) <= 1)
 
         # 4. Cohort Clash Prevention: At most one core class for each cohort at each slot
         for c in self.cohorts:
             c_id = c["id"]
+            c_blocks = blocks_by_cohort.get(c_id, [])
+            if len(c_blocks) <= 1:
+                continue
             for s in self.academic_slots:
                 day = s["day"]
                 s_id = s["slot_id"]
-                cohort_vars = []
-                for b in self.blocks:
-                    if b["workload"].get("cohort_id") == c_id:
-                        expr = self.X_slot[(b["block_id"], day, s_id)]
-                        if isinstance(expr, cp_model.LinearExpr) or expr != 0:
-                            cohort_vars.append(expr)
-                if cohort_vars:
+                cohort_vars = [
+                    self.X_slot[(b["block_id"], day, s_id)]
+                    for b in c_blocks
+                    if (b["block_id"], day, s_id) in self.X_slot and (
+                        isinstance(self.X_slot[(b["block_id"], day, s_id)], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s_id)] != 0
+                    )
+                ]
+                if len(cohort_vars) > 1:
                     self.model.Add(sum(cohort_vars) <= 1)
 
         # 5. NEP Elective Clashing (Student-Level clash prevention)
@@ -307,15 +314,18 @@ class ScheduleSolver:
                 elif w.get("elective_subject_id") is not None and w["elective_subject_id"] in st_electives:
                     student_blocks.append(b)
 
+            if len(student_blocks) <= 1:
+                continue
+
             for s in self.academic_slots:
                 day = s["day"]
                 s_id = s["slot_id"]
                 student_vars = []
                 for b in student_blocks:
-                    expr = self.X_slot[(b["block_id"], day, s_id)]
-                    if isinstance(expr, cp_model.LinearExpr) or expr != 0:
+                    expr = self.X_slot.get((b["block_id"], day, s_id))
+                    if expr is not None and (isinstance(expr, cp_model.LinearExpr) or expr != 0):
                         student_vars.append(expr)
-                if student_vars:
+                if len(student_vars) > 1:
                     self.model.Add(sum(student_vars) <= 1)
 
 
@@ -347,20 +357,29 @@ class ScheduleSolver:
         # B. Spacing Out Heavy Subjects
         for c in self.cohorts:
             c_id = c["id"]
+            c_heavy = [b for b in blocks_by_cohort.get(c_id, []) if b["subject"]["is_heavy_cognitive"]]
+            if len(c_heavy) <= 1:
+                continue
             for day in range(1, 6):
                 slots_in_day = self.academic_slots_by_day[day]
                 for i in range(len(slots_in_day) - 1):
                     s1 = slots_in_day[i]
                     s2 = slots_in_day[i+1]
                     
-                    heavy_vars_s1 = []
-                    heavy_vars_s2 = []
-                    for b in self.blocks:
-                        if b["workload"].get("cohort_id") == c_id and b["subject"]["is_heavy_cognitive"]:
-                            if (b["block_id"], day, s1["slot_id"]) in self.X_slot:
-                                heavy_vars_s1.append(self.X_slot[(b["block_id"], day, s1["slot_id"])])
-                            if (b["block_id"], day, s2["slot_id"]) in self.X_slot:
-                                heavy_vars_s2.append(self.X_slot[(b["block_id"], day, s2["slot_id"])])
+                    heavy_vars_s1 = [
+                        self.X_slot[(b["block_id"], day, s1["slot_id"])]
+                        for b in c_heavy
+                        if (b["block_id"], day, s1["slot_id"]) in self.X_slot and (
+                            isinstance(self.X_slot[(b["block_id"], day, s1["slot_id"])], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s1["slot_id"])] != 0
+                        )
+                    ]
+                    heavy_vars_s2 = [
+                        self.X_slot[(b["block_id"], day, s2["slot_id"])]
+                        for b in c_heavy
+                        if (b["block_id"], day, s2["slot_id"]) in self.X_slot and (
+                            isinstance(self.X_slot[(b["block_id"], day, s2["slot_id"])], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s2["slot_id"])] != 0
+                        )
+                    ]
 
                     if heavy_vars_s1 and heavy_vars_s2:
                         y1 = self.model.NewBoolVar(f"heavy_c{c_id}_d{day}_s{s1['slot_number']}")
@@ -375,6 +394,9 @@ class ScheduleSolver:
         # C. Faculty Consecutive Hours Limit
         for f in self.faculty:
             f_id = f["id"]
+            f_blocks = blocks_by_faculty.get(f_id, [])
+            if len(f_blocks) < 3:
+                continue
             for day in range(1, 6):
                 slots_in_day = self.academic_slots_by_day[day]
                 for i in range(len(slots_in_day) - 2):
@@ -382,14 +404,27 @@ class ScheduleSolver:
                     s2 = slots_in_day[i+1]
                     s3 = slots_in_day[i+2]
                     
-                    f_vars_s1 = []
-                    f_vars_s2 = []
-                    f_vars_s3 = []
-                    for b in self.blocks:
-                        if b["workload"]["faculty_id"] == f_id:
-                            f_vars_s1.append(self.X_slot[(b["block_id"], day, s1["slot_id"])])
-                            f_vars_s2.append(self.X_slot[(b["block_id"], day, s2["slot_id"])])
-                            f_vars_s3.append(self.X_slot[(b["block_id"], day, s3["slot_id"])])
+                    f_vars_s1 = [
+                        self.X_slot[(b["block_id"], day, s1["slot_id"])]
+                        for b in f_blocks
+                        if (b["block_id"], day, s1["slot_id"]) in self.X_slot and (
+                            isinstance(self.X_slot[(b["block_id"], day, s1["slot_id"])], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s1["slot_id"])] != 0
+                        )
+                    ]
+                    f_vars_s2 = [
+                        self.X_slot[(b["block_id"], day, s2["slot_id"])]
+                        for b in f_blocks
+                        if (b["block_id"], day, s2["slot_id"]) in self.X_slot and (
+                            isinstance(self.X_slot[(b["block_id"], day, s2["slot_id"])], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s2["slot_id"])] != 0
+                        )
+                    ]
+                    f_vars_s3 = [
+                        self.X_slot[(b["block_id"], day, s3["slot_id"])]
+                        for b in f_blocks
+                        if (b["block_id"], day, s3["slot_id"]) in self.X_slot and (
+                            isinstance(self.X_slot[(b["block_id"], day, s3["slot_id"])], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s3["slot_id"])] != 0
+                        )
+                    ]
 
                     if f_vars_s1 and f_vars_s2 and f_vars_s3:
                         z1 = self.model.NewBoolVar(f"fac_{f_id}_d{day}_s{s1['slot_number']}")
@@ -422,6 +457,9 @@ class ScheduleSolver:
         # E. Cohort Gaps
         for c in self.cohorts:
             c_id = c["id"]
+            c_blocks = blocks_by_cohort.get(c_id, [])
+            if not c_blocks:
+                continue
             for day in range(1, 6):
                 slots_in_day = self.academic_slots_by_day[day]
                 n_slots = len(slots_in_day)
@@ -431,14 +469,16 @@ class ScheduleSolver:
                 W = {}
                 for idx, s in enumerate(slots_in_day):
                     day = s["day"]
-                    cohort_slot_vars = []
-                    for b in self.blocks:
-                        if b["workload"].get("cohort_id") == c_id:
-                            cohort_slot_vars.append(self.X_slot[(b["block_id"], day, s["slot_id"])])
+                    cohort_slot_vars = [
+                        self.X_slot[(b["block_id"], day, s["slot_id"])]
+                        for b in c_blocks
+                        if (b["block_id"], day, s["slot_id"]) in self.X_slot and (
+                            isinstance(self.X_slot[(b["block_id"], day, s["slot_id"])], cp_model.LinearExpr) or self.X_slot[(b["block_id"], day, s["slot_id"])] != 0
+                        )
+                    ]
                     
                     W[idx] = self.model.NewBoolVar(f"W_{c_id}_d{day}_p{idx}")
                     self.model.Add(W[idx] == sum(cohort_slot_vars))
-
 
                 # Gaps checking (from index 1 to n_slots - 2)
                 for g in range(1, n_slots - 1):
@@ -459,14 +499,16 @@ class ScheduleSolver:
         if self.penalties:
             self.model.Minimize(sum(self.penalties))
 
-    def solve(self):
+    def solve(self, time_limit_seconds=15.0):
         """
         Run the CP-SAT solver and return the output status.
         """
-        self.solver.parameters.max_time_in_seconds = 180.0
+        self.solver.parameters.max_time_in_seconds = time_limit_seconds
+        self.solver.parameters.num_search_workers = 8
         status = self.solver.Solve(self.model)
         self.status = status
         return status
+
 
     def get_results(self):
         """

@@ -21,11 +21,19 @@ class SolverTriggerView(APIView):
     """
     def post(self, request):
         start_time = time.time()
+        print("\n=======================================================", flush=True)
+        print(">> [BACKEND SOLVER TRIGGERED] Starting CP-SAT Engine...", flush=True)
+        print("=======================================================", flush=True)
         try:
             data = fetch_scheduling_data()
+            print(f">> Loaded data from Postgres: {len(data['cohorts'])} Cohorts, {len(data['faculty'])} Faculty, {len(data['rooms'])} Rooms, {len(data['workloads'])} Workloads.", flush=True)
+            
             solver = ScheduleSolver(data)
+            print(">> Building CP-SAT mathematical model...", flush=True)
             solver.build_model()
-            status_obj = solver.solve()
+            
+            print(">> Solving optimization constraints (time limit: 15s)...", flush=True)
+            status_obj = solver.solve(time_limit_seconds=15.0)
             solver_status = solver.solver.StatusName(status_obj)
             
             saved_count = 0
@@ -37,16 +45,23 @@ class SolverTriggerView(APIView):
                     saved_count = len(entries)
             
             duration = round(time.time() - start_time, 2)
+            obj_val = float(solver.solver.ObjectiveValue()) if solver_status in ["OPTIMAL", "FEASIBLE"] else None
+            
+            print(f">> [SOLVER COMPLETED] Status: {solver_status} | Duration: {duration}s | Total Classes Created: {saved_count} | Obj: {obj_val}", flush=True)
+            if warnings:
+                print(f">> Warnings ({len(warnings)}):", warnings, flush=True)
+            print("=======================================================\n", flush=True)
             
             return Response({
                 "status": solver_status,
-                "objective_value": float(solver.solver.ObjectiveValue()) if solver_status in ["OPTIMAL", "FEASIBLE"] else None,
+                "objective_value": obj_val,
                 "total_entries_created": saved_count,
                 "solve_duration_seconds": duration,
                 "warnings": warnings,
-                "message": f"Routine generation finished with status '{solver_status}' in {duration}s."
+                "message": f"Routine generation finished with status '{solver_status}' in {duration}s. {saved_count} schedule entries saved."
             }, status=status.HTTP_200_OK if solver_status in ["OPTIMAL", "FEASIBLE"] else status.HTTP_422_UNPROCESSABLE_ENTITY)
         except Exception as e:
+            print(f">> [SOLVER ERROR] {e}", flush=True)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -83,6 +98,8 @@ class CohortRoutineView(APIView):
         cur.close()
         conn.close()
         
+        print(f"[API] GET Cohort Routine -> Cohort #{cohort_id} | Returned {len(rows)} scheduled class periods", flush=True)
+        
         # Build 2D Matrix (Days 1..5, Slots 1..9)
         matrix = {day: {slot: None for slot in range(1, 10)} for day in range(1, 6)}
         for row in rows:
@@ -93,6 +110,7 @@ class CohortRoutineView(APIView):
 
         return Response({
             "cohort_id": cohort_id,
+            "total_slots": len(rows),
             "weekly_grid": matrix
         }, status=status.HTTP_200_OK)
 
@@ -124,6 +142,8 @@ class FacultyRoutineView(APIView):
         cur.close()
         conn.close()
         
+        print(f"[API] GET Faculty Routine -> Faculty #{faculty_id} | Returned {len(rows)} scheduled class periods", flush=True)
+        
         matrix = {day: {slot: None for slot in range(1, 10)} for day in range(1, 6)}
         for row in rows:
             day = row['day_of_week']
@@ -133,6 +153,7 @@ class FacultyRoutineView(APIView):
 
         return Response({
             "faculty_id": faculty_id,
+            "total_slots": len(rows),
             "weekly_grid": matrix
         }, status=status.HTTP_200_OK)
 
@@ -163,6 +184,8 @@ class RoomRoutineView(APIView):
         cur.close()
         conn.close()
         
+        print(f"[API] GET Room Routine -> Room #{room_id} | Returned {len(rows)} scheduled class periods", flush=True)
+        
         matrix = {day: {slot: None for slot in range(1, 10)} for day in range(1, 6)}
         for row in rows:
             day = row['day_of_week']
@@ -172,6 +195,7 @@ class RoomRoutineView(APIView):
 
         return Response({
             "room_id": room_id,
+            "total_slots": len(rows),
             "weekly_grid": matrix
         }, status=status.HTTP_200_OK)
 

@@ -1,41 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#FBF9F5" />
+    <meta name="theme-color" content="#F7F8FA" />
     <title>Routine Generator | University Timetable Platform</title>
-    <!-- Google Fonts -->
+    <!-- Google Fonts: Inter & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
             fontFamily: {
-              sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+              sans: ['Inter', 'sans-serif'],
               mono: ['"JetBrains Mono"', 'monospace'],
             },
             colors: {
-              cream: {
-                50: '#FDFCF9',
-                100: '#FBF9F5',
-                200: '#F5F2EB',
-                300: '#EDE8DE',
-                400: '#DFD8C8',
-                500: '#C7BDAB',
+              // Custom Token System matching Section 4 Spec
+              canvas: {
+                light: '#F7F8FA',
+                dark: '#0B0D12',
               },
-              ink: {
-                900: '#1C1917',
-                800: '#292524',
-                700: '#44403C',
-                600: '#57534E',
-                500: '#78716C',
-                400: '#A8A29E',
+              surface: {
+                light: '#FFFFFF',
+                dark: '#14161C',
+                'muted-light': '#F1F2F5',
+                'muted-dark': '#1B1E26',
+              },
+              border: {
+                light: '#E5E7EB',
+                dark: '#2A2D37',
+                'strong-light': '#D1D5DB',
+                'strong-dark': '#374151',
+              },
+              content: {
+                'primary-light': '#111827',
+                'primary-dark': '#F3F4F6',
+                'secondary-light': '#4B5563',
+                'secondary-dark': '#A1A6B3',
+                'tertiary-light': '#9CA3AF',
+                'tertiary-dark': '#6B7280',
+              },
+              accent: {
+                DEFAULT: '#4F46E5', // indigo-600 (light)
+                hover: '#4338CA',
+                dark: '#6366F1',   // indigo-500 (dark)
+                'subtle-light': '#EEF2FF',
+                'subtle-dark': '#1E1F3A',
+              },
+              status: {
+                success: '#059669',
+                'success-dark': '#10B981',
+                danger: '#DC2626',
+                'danger-dark': '#F87171',
+              },
+              slot: {
+                core: '#059669',
+                'core-bg-light': '#ECFDF5',
+                'core-bg-dark': '#052E22',
+                lab: '#7C3AED',
+                'lab-bg-light': '#F5F3FF',
+                'lab-bg-dark': '#1E1533',
+                nep: '#D97706',
+                'nep-bg-light': '#FFFBEB',
+                'nep-bg-dark': '#2E2205',
+                recess: '#6B7280',
               }
+            },
+            boxShadow: {
+              'ambient-sm': '0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.06)',
+              'modal-lg': '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
             }
           }
         }
@@ -43,37 +82,45 @@
     </script>
     <style>
       body {
-        background-color: #FBF9F5;
-        color: #1C1917;
-        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-family: 'Inter', sans-serif;
         -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background-color: #F7F8FA;
+        color: #111827;
       }
-      /* Custom fine scrollbar */
+      .dark body {
+        background-color: #0B0D12;
+        color: #F3F4F6;
+      }
+      
+      /* Subtle hairline scrollbar */
       ::-webkit-scrollbar {
         width: 6px;
         height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #F5F2EB;
+        background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #D6D3D1;
-        border-radius: 3px;
+        background: #E5E7EB;
+        border-radius: 9999px;
       }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #A8A29E;
+      .dark ::-webkit-scrollbar-thumb {
+        background: #2A2D37;
       }
+
       @media print {
         .no-print {
           display: none !important;
         }
         body {
           background-color: #FFFFFF !important;
+          color: #000000 !important;
         }
       }
     </style>
   </head>
-  <body class="bg-cream-100 min-h-screen text-ink-900 selection:bg-stone-200">
+  <body class="bg-[#F7F8FA] dark:bg-[#0B0D12] text-[#111827] dark:text-[#F3F4F6] min-h-screen selection:bg-[#4F46E5] selection:text-white transition-colors duration-150">
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
   </body>

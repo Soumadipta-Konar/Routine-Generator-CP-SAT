@@ -46,9 +46,12 @@ export const api = {
   },
 
   // Ingestion: Upload Excel Workbook
-  uploadMasterWorkbook: async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
+  uploadMasterWorkbook: async (fileOrFormData) => {
+    const formData = fileOrFormData instanceof FormData ? fileOrFormData : (() => {
+      const fd = new FormData();
+      fd.append('file', fileOrFormData);
+      return fd;
+    })();
     const response = await apiClient.post('/imports/master-workbook/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',

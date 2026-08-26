@@ -217,8 +217,8 @@ def db_insert_sandbox(xls):
         subjects = pd.read_excel(xls, "Subjects").to_dict(orient="records")
         workload = pd.read_excel(xls, "Curriculum_Workload").to_dict(orient="records")
 
-        # 0. Atomic Reset of existing records to allow clean re-import
-        cursor.execute("TRUNCATE TABLE schedule_entry, elective_registration, curriculum_workload, student, lab_details, room, subject, faculty, cohort, department CASCADE;")
+        # 0. Atomic Reset of existing records with sequence restart to keep IDs consistent
+        cursor.execute("TRUNCATE TABLE schedule_entry, elective_registration, curriculum_workload, student, lab_details, room, subject, faculty, cohort, department RESTART IDENTITY CASCADE;")
 
         # 1. Load Departments dynamically
         depts = set()
@@ -239,44 +239,48 @@ def db_insert_sandbox(xls):
             dept_mapping['General'] = cursor.fetchone()[0]
         default_dept_id = list(dept_mapping.values())[0]
 
-        # 2. Insert Cohorts
+        # 2. Insert Cohorts with exact Excel Cohort_ID
         cohort_mapping = {}
         for row in cohorts:
             dept_id = dept_mapping.get(str(row.get("Department", "")).strip(), default_dept_id)
+            c_id = int(row["Cohort_ID"])
             cursor.execute(
-                "INSERT INTO cohort (name, semester, size, department_id) VALUES (%s, %s, %s, %s) RETURNING id;",
-                (str(row["Name"]), int(row["Semester"]), int(row["Size"]), dept_id)
+                "INSERT INTO cohort (id, name, semester, size, department_id) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, semester=EXCLUDED.semester, size=EXCLUDED.size, department_id=EXCLUDED.department_id RETURNING id;",
+                (c_id, str(row["Name"]), int(row["Semester"]), int(row["Size"]), dept_id)
             )
-            cohort_mapping[int(row["Cohort_ID"])] = cursor.fetchone()[0]
+            cohort_mapping[c_id] = cursor.fetchone()[0]
 
-        # 3. Insert Faculty
+        # 3. Insert Faculty with exact Excel Faculty_ID
         faculty_mapping = {}
         for row in faculty:
             dept_id = dept_mapping.get(str(row.get("Department", "")).strip(), default_dept_id)
+            f_id = int(row["Faculty_ID"])
             cursor.execute(
-                "INSERT INTO faculty (name, contact_number, max_weekly_hours, availability_preferences, department_id) VALUES (%s, %s, %s, %s, %s) RETURNING id;",
-                (str(row["Name"]), str(row["Contact_Number"]), int(row["Max_Weekly_Hours"]), '{}', dept_id)
+                "INSERT INTO faculty (id, name, contact_number, max_weekly_hours, availability_preferences, department_id) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, contact_number=EXCLUDED.contact_number, max_weekly_hours=EXCLUDED.max_weekly_hours, department_id=EXCLUDED.department_id RETURNING id;",
+                (f_id, str(row["Name"]), str(row["Contact_Number"]), int(row["Max_Weekly_Hours"]), '{}', dept_id)
             )
-            faculty_mapping[int(row["Faculty_ID"])] = cursor.fetchone()[0]
+            faculty_mapping[f_id] = cursor.fetchone()[0]
 
-        # 4. Insert Subjects
+        # 4. Insert Subjects with exact Excel Subject_ID
         subject_mapping = {}
         for row in subjects:
             dept_id = dept_mapping.get(str(row.get("Department", "")).strip(), default_dept_id)
             is_heavy = normalize_bool(row.get("Is_Heavy_Cognitive"))
             subj_type = "Lab" if "LAB" in str(row.get("Subject_Type", "")).upper() else "Lecture"
+            s_id = int(row["Subject_ID"])
             cursor.execute(
-                "INSERT INTO subject (code, name, periods_per_week, is_heavy_cognitive, subject_type, department_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;",
-                (str(row["Code"]), str(row["Name"]), int(row["Periods_Per_Week"]), is_heavy, subj_type, dept_id)
+                "INSERT INTO subject (id, code, name, periods_per_week, is_heavy_cognitive, subject_type, department_id) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET code=EXCLUDED.code, name=EXCLUDED.name, periods_per_week=EXCLUDED.periods_per_week, is_heavy_cognitive=EXCLUDED.is_heavy_cognitive, subject_type=EXCLUDED.subject_type, department_id=EXCLUDED.department_id RETURNING id;",
+                (s_id, str(row["Code"]), str(row["Name"]), int(row["Periods_Per_Week"]), is_heavy, subj_type, dept_id)
             )
-            subject_mapping[int(row["Subject_ID"])] = cursor.fetchone()[0]
+            subject_mapping[s_id] = cursor.fetchone()[0]
 
-        # 5. Insert Rooms and Lab Details
+        # 5. Insert Rooms with exact Excel Room_ID
         for row in rooms:
             room_type = "Lecture_Hall" if "LECTURE" in str(row.get("Room_Type", "")).upper() else "Lab"
+            r_id = int(row["Room_ID"])
             cursor.execute(
-                "INSERT INTO room (name, capacity, room_type) VALUES (%s, %s, %s) RETURNING id;",
-                (str(row["Name"]), int(row["Capacity"]), room_type)
+                "INSERT INTO room (id, name, capacity, room_type) VALUES (%s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, capacity=EXCLUDED.capacity, room_type=EXCLUDED.room_type RETURNING id;",
+                (r_id, str(row["Name"]), int(row["Capacity"]), room_type)
             )
             room_id = cursor.fetchone()[0]
             

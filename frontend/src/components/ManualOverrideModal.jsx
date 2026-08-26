@@ -1,35 +1,47 @@
 import React, { useState } from 'react';
-import { X, ArrowRight, AlertTriangle, Check, Loader2, Sparkles } from 'lucide-react';
+import { X, AlertTriangle, ArrowRight, Loader2, Check } from 'lucide-react';
 import { api } from '../services/api';
 
 const DAYS = [
-  { id: 1, name: 'Monday' },
-  { id: 2, name: 'Tuesday' },
-  { id: 3, name: 'Wednesday' },
-  { id: 4, name: 'Thursday' },
-  { id: 5, name: 'Friday' },
+  { id: 1, name: 'Monday (Day 1)' },
+  { id: 2, name: 'Tuesday (Day 2)' },
+  { id: 3, name: 'Wednesday (Day 3)' },
+  { id: 4, name: 'Thursday (Day 4)' },
+  { id: 5, name: 'Friday (Day 5)' },
 ];
 
 const PERIODS = [
-  { id: 1, name: 'Period 1 (09:00 - 10:00)' },
-  { id: 2, name: 'Period 2 (10:00 - 11:00)' },
-  { id: 3, name: 'Period 3 (11:00 - 12:00)' },
-  { id: 4, name: 'Period 4 (12:00 - 01:00)' },
-  { id: 6, name: 'Period 5 (02:00 - 03:00)' },
-  { id: 7, name: 'Period 6 (03:00 - 04:00)' },
-  { id: 8, name: 'Period 7 (04:00 - 05:00)' },
-  { id: 9, name: 'Period 8 (05:00 - 06:00)' },
+  { id: 1, name: '1st Period (09:00 – 09:55)' },
+  { id: 2, name: '2nd Period (09:55 – 10:50)' },
+  { id: 3, name: '3rd Period (10:50 – 11:45)' },
+  { id: 4, name: '4th Period (11:45 – 12:40)' },
+  { id: 6, name: '5th Period (13:50 – 14:45)' },
+  { id: 7, name: '6th Period (14:45 – 15:40)' },
+  { id: 8, name: '7th Period (15:40 – 16:35)' },
+  { id: 9, name: '8th Period (16:35 – 17:30)' },
 ];
 
-export default function ManualOverrideModal({ entry, onClose, onSuccess }) {
-  const [targetDay, setTargetDay] = useState(entry?.day_of_week || 1);
-  const [targetSlot, setTargetSlot] = useState(entry?.period_slot_id || 1);
+export default function ManualOverrideModal({
+  entry = null,
+  dayId = 1,
+  periodId = 1,
+  onClose = () => {},
+  onSuccess = () => {},
+}) {
+  const [targetDay, setTargetDay] = useState(entry?.day_of_week || dayId);
+  const [targetSlot, setTargetSlot] = useState(entry?.period_slot_id || periodId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  if (!entry) return null;
+  const isReassign = Boolean(entry);
+  const modalTitle = isReassign ? "Reassign Class Period" : "Schedule Class into Slot";
 
   const handleApply = async () => {
+    if (!entry) {
+      onClose();
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -51,49 +63,56 @@ export default function ManualOverrideModal({ entry, onClose, onSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border border-stone-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-[#14161C] border border-[#E5E7EB] dark:border-[#2A2D37] rounded-xl shadow-lg max-w-[480px] w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 transition-colors">
         
         {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-stone-200 bg-cream-50 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-ink-900">Manual Schedule Slot Override</h3>
-            <p className="text-[11px] text-ink-500 font-medium">Reassign time slot with live 3-layer clash detection</p>
-          </div>
-          <button onClick={onClose} className="p-1 text-ink-400 hover:text-ink-700 rounded-md">
-            <X className="w-4 h-4" />
+        <div className="px-6 py-4 border-b border-[#E5E7EB] dark:border-[#2A2D37] flex items-center justify-between">
+          <h3 className="text-base font-semibold text-[#111827] dark:text-[#F3F4F6]">
+            {modalTitle}
+          </h3>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 flex items-center justify-center text-[#9CA3AF] hover:text-[#111827] dark:hover:text-[#F3F4F6] rounded-lg hover:bg-[#F1F2F5] dark:hover:bg-[#1B1E26] transition-colors cursor-pointer"
+            aria-label="Close modal"
+          >
+            <X className="w-4 h-4" strokeWidth={1.75} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 space-y-4">
+        <div className="p-6 space-y-4">
           
-          {/* Current Class Overview Card */}
-          <div className="p-3.5 bg-cream-100 rounded-xl border border-stone-200/90 text-xs">
-            <div className="flex items-center justify-between font-mono font-bold text-ink-900 mb-1">
-              <span>{entry.subject_code}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-cream-300/80 text-ink-800">
-                {entry.room_name}
-              </span>
+          {/* Read-only Class Summary Card */}
+          {entry && (
+            <div className="p-3.5 bg-[#F1F2F5] dark:bg-[#1B1E26] rounded-lg border-l-[3px] border-[#4F46E5] dark:border-[#6366F1] space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-semibold text-[#111827] dark:text-[#F3F4F6]">
+                  {entry.subject_code}
+                </span>
+                <span className="font-mono text-[0.6875rem] px-1.5 py-0.5 rounded bg-white dark:bg-[#14161C] border border-[#E5E7EB] dark:border-[#2A2D37] text-[#6B7280] dark:text-[#9CA3AF]">
+                  {entry.room_name}
+                </span>
+              </div>
+              <div className="text-sm font-medium text-[#111827] dark:text-[#F3F4F6]">
+                {entry.subject_name}
+              </div>
+              <div className="text-xs text-[#4B5563] dark:text-[#A1A6B3]">
+                Instructor: {entry.faculty_name}
+              </div>
             </div>
-            <div className="font-semibold text-ink-800 line-clamp-1">{entry.subject_name}</div>
-            <div className="text-[11px] text-ink-500 mt-1 flex items-center space-x-2">
-              <span>Faculty: {entry.faculty_name}</span>
-              <span>•</span>
-              <span>Current: Day {entry.day_of_week}, Period {entry.period_slot_id}</span>
-            </div>
-          </div>
+          )}
 
           {/* Target Selectors */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-bold text-ink-700 uppercase tracking-wider mb-1">
+              <label className="block text-xs font-medium text-[#4B5563] dark:text-[#A1A6B3] mb-1.5">
                 Target Day
               </label>
               <select
                 value={targetDay}
                 onChange={(e) => setTargetDay(e.target.value)}
-                className="w-full bg-cream-50 border border-stone-300 rounded-lg px-3 py-2 text-xs font-semibold text-ink-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
+                className="w-full h-10 px-3 bg-white dark:bg-[#14161C] border border-[#E5E7EB] dark:border-[#2A2D37] rounded-lg text-sm text-[#111827] dark:text-[#F3F4F6] focus:outline-none focus:ring-2 focus:ring-[#4F46E5] cursor-pointer"
               >
                 {DAYS.map((d) => (
                   <option key={d.id} value={d.id}>{d.name}</option>
@@ -102,13 +121,13 @@ export default function ManualOverrideModal({ entry, onClose, onSuccess }) {
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-ink-700 uppercase tracking-wider mb-1">
+              <label className="block text-xs font-medium text-[#4B5563] dark:text-[#A1A6B3] mb-1.5">
                 Target Period
               </label>
               <select
                 value={targetSlot}
                 onChange={(e) => setTargetSlot(e.target.value)}
-                className="w-full bg-cream-50 border border-stone-300 rounded-lg px-3 py-2 text-xs font-semibold text-ink-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
+                className="w-full h-10 px-3 bg-white dark:bg-[#14161C] border border-[#E5E7EB] dark:border-[#2A2D37] rounded-lg text-sm text-[#111827] dark:text-[#F3F4F6] focus:outline-none focus:ring-2 focus:ring-[#4F46E5] cursor-pointer"
               >
                 {PERIODS.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
@@ -117,12 +136,12 @@ export default function ManualOverrideModal({ entry, onClose, onSuccess }) {
             </div>
           </div>
 
-          {/* Clash Error Alert */}
+          {/* Conflict Inline Alert */}
           {error && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs flex items-start space-x-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+            <div className="p-3 bg-[#FEF2F2] dark:bg-[#450A0A] border border-[#FCA5A5] dark:border-[#991B1B] rounded-lg text-xs text-[#DC2626] dark:text-[#F87171] flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.75} />
               <div>
-                <span className="font-bold">Clash Conflict: </span>
+                <span className="font-semibold">Schedule Conflict: </span>
                 <span>{error}</span>
               </div>
             </div>
@@ -131,27 +150,27 @@ export default function ManualOverrideModal({ entry, onClose, onSuccess }) {
         </div>
 
         {/* Modal Footer */}
-        <div className="px-5 py-3.5 bg-cream-50 border-t border-stone-200 flex items-center justify-end space-x-2">
+        <div className="px-6 py-4 border-t border-[#E5E7EB] dark:border-[#2A2D37] bg-[#F1F2F5] dark:bg-[#1B1E26] flex items-center justify-end space-x-3">
           <button
             onClick={onClose}
-            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-ink-600 hover:bg-cream-200 transition-colors"
+            className="h-9 px-4 rounded-lg text-sm font-medium bg-white dark:bg-[#14161C] border border-[#E5E7EB] dark:border-[#2A2D37] text-[#111827] dark:text-[#F3F4F6] hover:bg-[#F1F2F5] dark:hover:bg-[#1B1E26] transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             onClick={handleApply}
             disabled={saving}
-            className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 transition-all shadow-xs disabled:opacity-50"
+            className="h-9 px-4 rounded-lg text-sm font-medium bg-[#4F46E5] hover:bg-[#4338CA] text-white transition-all shadow-sm disabled:opacity-50 inline-flex items-center space-x-1.5 cursor-pointer"
           >
             {saving ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Validating Clash...</span>
+                <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                <span>Checking Clashes…</span>
               </>
             ) : (
               <>
-                <span>Apply Move</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <span>Save Changes</span>
+                <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.75} />
               </>
             )}
           </button>
