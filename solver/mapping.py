@@ -29,16 +29,6 @@ def get_db_connection():
         raise ConnectionError(
             f"Could not connect to PostgreSQL database. DATABASE_URL environment variable is not set, and connection to '{host}:{port}' failed: {conn_err}"
         )
-=======
-        return psycopg2.connect(db_url, sslmode='require')
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "routine_generator"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "Somu1@POSTGRESQL")
-    )
->>>>>>> 148c296 (Fix: Add automatic DB schema initialization for Render and SSL mode for solver)
 
 def fetch_scheduling_data():
     """
