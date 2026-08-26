@@ -504,7 +504,8 @@ class ScheduleSolver:
         Run the CP-SAT solver and return the output status.
         """
         self.solver.parameters.max_time_in_seconds = time_limit_seconds
-        self.solver.parameters.num_search_workers = 8
+        cpu_workers = min(os.cpu_count() or 2, 4)
+        self.solver.parameters.num_search_workers = cpu_workers
         status = self.solver.Solve(self.model)
         self.status = status
         return status
