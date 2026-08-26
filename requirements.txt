@@ -6,3 +6,6 @@ ortools
 django
 djangorestframework
 django-cors-headers
+gunicorn
+whitenoise
+dj-database-url

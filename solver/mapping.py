@@ -8,13 +8,17 @@ load_dotenv()
 def get_db_connection():
     """
     Establish a connection to the PostgreSQL database.
+    Supports either DATABASE_URL or individual DB_* variables.
     """
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        return psycopg2.connect(db_url)
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=os.getenv("DB_PORT", "5432"),
         database=os.getenv("DB_NAME", "routine_generator"),
         user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "")
+        password=os.getenv("DB_PASSWORD", "Somu1@POSTGRESQL")
     )
 
 def fetch_scheduling_data():
