@@ -104,3 +104,23 @@ class TemplateDownloadView(APIView):
         response['Content-Disposition'] = 'attachment; filename="master_schedule_template.xlsx"'
         return response
 
+class SampleDownloadView(APIView):
+    """
+    GET /api/v1/imports/download-sample/
+    Returns the populated sample Excel file (master_schedule_sample.xlsx).
+    """
+    def get(self, request):
+        sample_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'master_schedule_sample.xlsx')
+        if os.path.exists(sample_path):
+            with open(sample_path, 'rb') as f:
+                content = f.read()
+            response = HttpResponse(
+                content,
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            response['Content-Disposition'] = 'attachment; filename="master_schedule_sample.xlsx"'
+            return response
+        else:
+            return Response({"error": "Sample file not found."}, status=status.HTTP_404_NOT_FOUND)
+
+

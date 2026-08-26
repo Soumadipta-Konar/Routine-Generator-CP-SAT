@@ -59,6 +59,25 @@ export default function ExcelUploader({ onUploadSuccess }) {
     }
   };
 
+  const handleDownloadSample = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/imports/download-sample/');
+      if (!response.ok) throw new Error('Failed to download sample file');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'master_schedule_sample.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      window.location.href = 'http://localhost:8000/api/v1/imports/download-sample/';
+    }
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-sm transition-all">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -72,16 +91,28 @@ export default function ExcelUploader({ onUploadSuccess }) {
           </div>
         </div>
 
-        {/* Download Blank Template Button */}
-        <button
-          type="button"
-          onClick={handleDownloadTemplate}
-          className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-cream-200 hover:bg-cream-300 text-ink-800 border border-stone-300/70 transition-all shadow-2xs self-start sm:self-auto cursor-pointer"
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5 text-ink-600" />
-          <span>Download Blank Excel Template (.xlsx)</span>
-        </button>
+        {/* Download Buttons (Sample + Blank Template) */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={handleDownloadSample}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 transition-all shadow-2xs cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Download Sample Dataset (.xlsx)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-cream-200 hover:bg-cream-300 text-ink-800 border border-stone-300/70 transition-all shadow-2xs cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-ink-600" />
+            <span>Blank Template</span>
+          </button>
+        </div>
       </div>
+
 
 
 
