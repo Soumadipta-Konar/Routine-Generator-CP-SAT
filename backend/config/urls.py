@@ -1,11 +1,25 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
+import sys
+from io import StringIO
+import traceback
 
 def health_check(request):
+    import subprocess
+    import traceback
+    try:
+        result = subprocess.run(["python", "init_db.py"], capture_output=True, text=True)
+        status_msg = "healthy"
+        init_output = result.stdout + "\n" + result.stderr
+    except Exception as e:
+        status_msg = "error"
+        init_output = traceback.format_exc()
+        
     return JsonResponse({
-        "status": "online",
+        "status": status_msg,
         "service": "Routine Generator API",
+        "init_output": init_output,
         "endpoints": {
             "schedules": "/api/v1/schedules/",
             "imports": "/api/v1/imports/",
