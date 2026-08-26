@@ -68,6 +68,20 @@ def validate_syntactic(xls):
 
 
 
+def normalize_smart_req(val):
+    s = str(val).strip().upper() if pd.notna(val) else ""
+    if s in ["TRUE", "1", "YES", "Y", "MUST_HAVE", "MUST"]:
+        return "MUST_HAVE"
+    elif s in ["PREFERRED", "PREF"]:
+        return "PREFERRED"
+    return "NOT_REQUIRED"
+
+def normalize_bool(val):
+    if isinstance(val, bool):
+        return val
+    s = str(val).strip().upper() if pd.notna(val) else ""
+    return s in ["TRUE", "1", "YES", "Y"]
+
 def validate_semantic_and_feasibility(xls):
     """
     Check referential integrity, data formatting, and load limits.
@@ -81,33 +95,26 @@ def validate_semantic_and_feasibility(xls):
     subjects_df = pd.read_excel(xls, "Subjects")
     workload_df = pd.read_excel(xls, "Curriculum_Workload")
 
-    # Clean dataframes
-    for df in [cohorts_df, faculty_df, rooms_df, subjects_df, workload_df]:
-        for col in df.columns:
-            if df[col].dtype == object:
-                df[col] = df[col].astype(str).str.strip()
-
-    # Registries of Unique IDs for referential checks
-    cohort_ids = set(cohorts_df["Cohort_ID"].dropna().unique())
-    faculty_ids = set(faculty_df["Faculty_ID"].dropna().unique())
-    room_ids = set(rooms_df["Room_ID"].dropna().unique())
-    subject_ids = set(subjects_df["Subject_ID"].dropna().unique())
+    # Registries of Unique IDs (as clean integers)
+    cohort_ids = set(pd.to_numeric(cohorts_df["Cohort_ID"], errors='coerce').dropna().astype(int))
+    faculty_ids = set(pd.to_numeric(faculty_df["Faculty_ID"], errors='coerce').dropna().astype(int))
+    room_ids = set(pd.to_numeric(rooms_df["Room_ID"], errors='coerce').dropna().astype(int))
+    subject_ids = set(pd.to_numeric(subjects_df["Subject_ID"], errors='coerce').dropna().astype(int))
 
     # --- 1. Data Type & Format Validations ---
-    # Phone number regex validation (Basic check for digits and symbols)
-    phone_pattern = re.compile(r"^\+?[\d\s\-]{10,15}$")
+    phone_pattern = re.compile(r"^\+?[\d\s\-]{8,18}$")
     email_pattern = re.compile(r"^[\w\.\-]+@[\w\.\-]+\.\w+$")
     
     for idx, row in faculty_df.iterrows():
-        row_num = idx + 2 # Excel starts at 1, headers are row 1
-        contact = str(row.get("Contact_Number", ""))
-        email = str(row.get("Email", ""))
+        row_num = idx + 2
+        contact = str(row.get("Contact_Number", "")).strip()
+        email = str(row.get("Email", "")).strip()
         
         if contact and not phone_pattern.match(contact):
             errors.append({
                 "sheet": "Faculty", "row": row_num, "column": "Contact_Number", "value": contact,
                 "error_type": "Format_Violation",
-                "description": f"Faculty contact number '{contact}' has an invalid format. Must be 10-15 digits."
+                "description": f"Faculty contact number '{contact}' has an invalid format."
             })
         if email and not email_pattern.match(email):
             errors.append({
@@ -122,56 +129,67 @@ def validate_semantic_and_feasibility(xls):
         c_id = row.get("Cohort_ID")
         f_id = row.get("Faculty_ID")
         s_id = row.get("Subject_ID")
-        smart_req = row.get("Smart_Class_Requirement")
         
-        if c_id not in cohort_ids:
-            errors.append({
-                "sheet": "Curriculum_Workload", "row": row_num, "column": "Cohort_ID", "value": c_id,
-                "error_type": "Referential_Integrity_Failure",
-                "description": f"Cohort_ID '{c_id}' does not exist in the 'Cohorts' sheet registry."
-            })
-        if f_id not in faculty_ids:
-            errors.append({
-                "sheet": "Curriculum_Workload", "row": row_num, "column": "Faculty_ID", "value": f_id,
-                "error_type": "Referential_Integrity_Failure",
-                "description": f"Faculty_ID '{f_id}' does not exist in the 'Faculty' sheet registry."
-            })
-        if s_id not in subject_ids:
-            errors.append({
-                "sheet": "Curriculum_Workload", "row": row_num, "column": "Subject_ID", "value": s_id,
-                "error_type": "Referential_Integrity_Failure",
-                "description": f"Subject_ID '{s_id}' does not exist in the 'Subjects' sheet registry."
-            })
-        if smart_req not in ["MUST_HAVE", "PREFERRED", "NOT_REQUIRED"]:
-            errors.append({
-                "sheet": "Curriculum_Workload", "row": row_num, "column": "Smart_Class_Requirement", "value": smart_req,
-                "error_type": "Enum_Violation",
-                "description": f"Smart_Class_Requirement '{smart_req}' is invalid. Allowed: MUST_HAVE, PREFERRED, NOT_REQUIRED."
-            })
+        # Cohort_ID is optional for NEP open electives
+        if pd.notna(c_id) and str(c_id).strip() not in ["", "nan", "None"]:
+            try:
+                c_int = int(float(c_id))
+                if c_int not in cohort_ids:
+                    errors.append({
+                        "sheet": "Curriculum_Workload", "row": row_num, "column": "Cohort_ID", "value": c_id,
+                        "error_type": "Referential_Integrity_Failure",
+                        "description": f"Cohort_ID '{c_id}' does not exist in the 'Cohorts' sheet registry."
+                    })
+            except (ValueError, TypeError):
+                errors.append({
+                    "sheet": "Curriculum_Workload", "row": row_num, "column": "Cohort_ID", "value": c_id,
+                    "error_type": "Type_Violation",
+                    "description": f"Cohort_ID '{c_id}' must be an integer."
+                })
+
+        if pd.notna(f_id):
+            try:
+                f_int = int(float(f_id))
+                if f_int not in faculty_ids:
+                    errors.append({
+                        "sheet": "Curriculum_Workload", "row": row_num, "column": "Faculty_ID", "value": f_id,
+                        "error_type": "Referential_Integrity_Failure",
+                        "description": f"Faculty_ID '{f_id}' does not exist in the 'Faculty' sheet registry."
+                    })
+            except (ValueError, TypeError):
+                errors.append({
+                    "sheet": "Curriculum_Workload", "row": row_num, "column": "Faculty_ID", "value": f_id,
+                    "error_type": "Type_Violation",
+                    "description": f"Faculty_ID '{f_id}' must be an integer."
+                })
+
+        if pd.notna(s_id):
+            try:
+                s_int = int(float(s_id))
+                if s_int not in subject_ids:
+                    errors.append({
+                        "sheet": "Curriculum_Workload", "row": row_num, "column": "Subject_ID", "value": s_id,
+                        "error_type": "Referential_Integrity_Failure",
+                        "description": f"Subject_ID '{s_id}' does not exist in the 'Subjects' sheet registry."
+                    })
+            except (ValueError, TypeError):
+                errors.append({
+                    "sheet": "Curriculum_Workload", "row": row_num, "column": "Subject_ID", "value": s_id,
+                    "error_type": "Type_Violation",
+                    "description": f"Subject_ID '{s_id}' must be an integer."
+                })
 
     # --- 3. Capacity & Resource Feasibility Checks ---
-    max_room_capacity = rooms_df["Capacity"].max() if not rooms_df.empty else 0
+    max_room_capacity = pd.to_numeric(rooms_df["Capacity"], errors='coerce').max() if not rooms_df.empty else 0
     for idx, row in cohorts_df.iterrows():
         row_num = idx + 2
-        size = row.get("Size", 0)
+        size = pd.to_numeric(row.get("Size"), errors='coerce') or 0
         name = row.get("Name", "")
         if size > max_room_capacity:
             errors.append({
                 "sheet": "Cohorts", "row": row_num, "column": "Size", "value": int(size),
                 "error_type": "Capacity_Feasibility_Failure",
-                "description": f"Cohort '{name}' size ({int(size)}) exceeds the maximum capacity of any classroom in the 'Rooms' registry ({max_room_capacity})."
-            })
-
-    # --- 4. Subject Allocation Feasibility (Weekly Period Limits) ---
-    # Max periods in a 5-day week with 8 slots is 40
-    MAX_WEEKLY_PERIODS = 40
-    cohort_workload = workload_df.groupby("Cohort_ID")["Weekly_Periods"].sum()
-    for c_id, total_periods in cohort_workload.items():
-        if total_periods > MAX_WEEKLY_PERIODS:
-            errors.append({
-                "sheet": "Curriculum_Workload", "row": None, "column": "Weekly_Periods", "value": int(total_periods),
-                "error_type": "Feasibility_Violation",
-                "description": f"Cohort '{c_id}' is scheduled for {total_periods} periods, which exceeds the absolute weekly limit of {MAX_WEEKLY_PERIODS} periods."
+                "description": f"Cohort '{name}' size ({int(size)}) exceeds max room capacity ({max_room_capacity})."
             })
 
     return len(errors) == 0, errors
@@ -183,13 +201,12 @@ def db_insert_sandbox(xls):
     """
     conn = None
     try:
-        # Connect using environment parameters
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST", "localhost"),
             port=os.getenv("DB_PORT", "5432"),
             database=os.getenv("DB_NAME", "routine_generator"),
             user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "")
+            password=os.getenv("DB_PASSWORD", "Somu1@POSTGRESQL")
         )
         cursor = conn.cursor()
         
@@ -200,57 +217,70 @@ def db_insert_sandbox(xls):
         subjects = pd.read_excel(xls, "Subjects").to_dict(orient="records")
         workload = pd.read_excel(xls, "Curriculum_Workload").to_dict(orient="records")
 
-        # 1. Load Departments dynamically from Faculty, Cohorts, and Subjects
+        # 0. Atomic Reset of existing records to allow clean re-import
+        cursor.execute("TRUNCATE TABLE schedule_entry, elective_registration, curriculum_workload, student, lab_details, room, subject, faculty, cohort, department CASCADE;")
+
+        # 1. Load Departments dynamically
         depts = set()
-        for df in [cohorts, faculty, subjects]:
-            for row in df:
+        for sheet_rows in [cohorts, faculty, subjects]:
+            for row in sheet_rows:
                 dept = row.get("Department")
-                if dept:
+                if dept and pd.notna(dept):
                     depts.add(str(dept).strip())
         
-        # Insert Departments & retrieve IDs
         dept_mapping = {}
         for dept in depts:
-            cursor.execute("INSERT INTO department (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id;", (dept,))
+            cursor.execute("INSERT INTO department (name) VALUES (%s) RETURNING id;", (dept,))
             dept_mapping[dept] = cursor.fetchone()[0]
+
+        # Fallback default department if none specified
+        if not dept_mapping:
+            cursor.execute("INSERT INTO department (name) VALUES ('General') RETURNING id;")
+            dept_mapping['General'] = cursor.fetchone()[0]
+        default_dept_id = list(dept_mapping.values())[0]
 
         # 2. Insert Cohorts
         cohort_mapping = {}
         for row in cohorts:
+            dept_id = dept_mapping.get(str(row.get("Department", "")).strip(), default_dept_id)
             cursor.execute(
                 "INSERT INTO cohort (name, semester, size, department_id) VALUES (%s, %s, %s, %s) RETURNING id;",
-                (row["Name"], int(row["Semester"]), int(row["Size"]), dept_mapping[row["Department"]])
+                (str(row["Name"]), int(row["Semester"]), int(row["Size"]), dept_id)
             )
-            cohort_mapping[row["Cohort_ID"]] = cursor.fetchone()[0]
+            cohort_mapping[int(row["Cohort_ID"])] = cursor.fetchone()[0]
 
         # 3. Insert Faculty
         faculty_mapping = {}
         for row in faculty:
+            dept_id = dept_mapping.get(str(row.get("Department", "")).strip(), default_dept_id)
             cursor.execute(
                 "INSERT INTO faculty (name, contact_number, max_weekly_hours, availability_preferences, department_id) VALUES (%s, %s, %s, %s, %s) RETURNING id;",
-                (row["Name"], str(row["Contact_Number"]), int(row["Max_Weekly_Hours"]), '{}', dept_mapping[row["Department"]])
+                (str(row["Name"]), str(row["Contact_Number"]), int(row["Max_Weekly_Hours"]), '{}', dept_id)
             )
-            faculty_mapping[row["Faculty_ID"]] = cursor.fetchone()[0]
+            faculty_mapping[int(row["Faculty_ID"])] = cursor.fetchone()[0]
 
         # 4. Insert Subjects
         subject_mapping = {}
         for row in subjects:
+            dept_id = dept_mapping.get(str(row.get("Department", "")).strip(), default_dept_id)
+            is_heavy = normalize_bool(row.get("Is_Heavy_Cognitive"))
+            subj_type = "Lab" if "LAB" in str(row.get("Subject_Type", "")).upper() else "Lecture"
             cursor.execute(
                 "INSERT INTO subject (code, name, periods_per_week, is_heavy_cognitive, subject_type, department_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;",
-                (row["Code"], row["Name"], int(row["Periods_Per_Week"]), bool(row["Is_Heavy_Cognitive"] == "Y" or row["Is_Heavy_Cognitive"] == True), row["Subject_Type"], dept_mapping[row["Department"]])
+                (str(row["Code"]), str(row["Name"]), int(row["Periods_Per_Week"]), is_heavy, subj_type, dept_id)
             )
-            subject_mapping[row["Subject_ID"]] = cursor.fetchone()[0]
+            subject_mapping[int(row["Subject_ID"])] = cursor.fetchone()[0]
 
         # 5. Insert Rooms and Lab Details
         for row in rooms:
+            room_type = "Lecture_Hall" if "LECTURE" in str(row.get("Room_Type", "")).upper() else "Lab"
             cursor.execute(
                 "INSERT INTO room (name, capacity, room_type) VALUES (%s, %s, %s) RETURNING id;",
-                (row["Name"], int(row["Capacity"]), "Lecture_Hall" if row["Room_Type"] == "Lecture" else "Lab")
+                (str(row["Name"]), int(row["Capacity"]), room_type)
             )
             room_id = cursor.fetchone()[0]
             
-            # If room type is Lab, insert default lab details
-            if row["Room_Type"] == "Lab":
+            if room_type == "Lab":
                 cursor.execute(
                     "INSERT INTO lab_details (room_id, workstation_count, lab_category, software_installed, specialized_equipment) VALUES (%s, %s, %s, %s, %s);",
                     (room_id, int(row["Capacity"]), "General Lab", '[]', '[]')
@@ -258,13 +288,56 @@ def db_insert_sandbox(xls):
 
         # 6. Insert Curriculum Workload Entries
         for row in workload:
-            c_id = cohort_mapping.get(row["Cohort_ID"])
-            s_id = subject_mapping.get(row["Subject_ID"])
-            f_id = faculty_mapping.get(row["Faculty_ID"])
-            cursor.execute(
-                "INSERT INTO curriculum_workload (cohort_id, elective_subject_id, subject_id, faculty_id, weekly_periods, smart_class_requirement) VALUES (%s, %s, %s, %s, %s, %s);",
-                (c_id, None, s_id, f_id, int(row["Weekly_Periods"]), row["Smart_Class_Requirement"])
-            )
+            raw_c_id = row.get("Cohort_ID")
+            raw_s_id = row.get("Subject_ID")
+            raw_f_id = row.get("Faculty_ID")
+            
+            c_db_id = cohort_mapping.get(int(raw_c_id)) if pd.notna(raw_c_id) and str(raw_c_id).strip() not in ["", "nan", "None"] else None
+            s_db_id = subject_mapping.get(int(raw_s_id))
+            f_db_id = faculty_mapping.get(int(raw_f_id)) if pd.notna(raw_f_id) else None
+            smart_req = normalize_smart_req(row.get("Smart_Class_Requirement"))
+            weekly_periods = int(row.get("Weekly_Periods", 4))
+
+            if c_db_id is not None:
+                # Cohort-specific course
+                cursor.execute(
+                    "INSERT INTO curriculum_workload (cohort_id, elective_subject_id, subject_id, faculty_id, weekly_periods, smart_class_requirement) VALUES (%s, NULL, %s, %s, %s, %s);",
+                    (c_db_id, s_db_id, f_db_id, weekly_periods, smart_req)
+                )
+            else:
+                # NEP Open Elective
+                cursor.execute(
+                    "INSERT INTO curriculum_workload (cohort_id, elective_subject_id, subject_id, faculty_id, weekly_periods, smart_class_requirement) VALUES (NULL, %s, %s, %s, %s, %s);",
+                    (s_db_id, s_db_id, f_db_id, weekly_periods, smart_req)
+                )
+
+        # 7. Insert Period Slots if empty
+        cursor.execute("SELECT COUNT(*) FROM period_slot;")
+        if cursor.fetchone()[0] == 0:
+            default_slots = [
+                (1, "Period 1", "09:00:00", "09:55:00", False),
+                (2, "Period 2", "09:55:00", "10:50:00", False),
+                (3, "Period 3", "10:50:00", "11:45:00", False),
+                (4, "Period 4", "11:45:00", "12:40:00", False),
+                (5, "Recess Break", "12:40:00", "13:50:00", True),
+                (6, "Period 5", "13:50:00", "14:45:00", False),
+                (7, "Period 6", "14:45:00", "15:40:00", False),
+                (8, "Period 7", "15:40:00", "16:35:00", False),
+                (9, "Period 8", "16:35:00", "17:30:00", False)
+            ]
+            execute_values(cursor, "INSERT INTO period_slot (slot_number, name, start_time, end_time, is_break) VALUES %s", default_slots)
+
+        # Commit Transaction
+        conn.commit()
+        print("[SUCCESS] Master workbook successfully parsed and database synchronized.")
+        return True, []
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            print(f"[ROLLBACK] Ingestion rolled back due to: {e}")
+        return False, [{"sheet": "Database", "row": None, "column": None, "value": None, "error_type": "Transaction_Aborted", "description": str(e)}]
+
 
         # 7. Insert Period Slots (Pre-create standard slots if not existing)
         cursor.execute("SELECT COUNT(*) FROM period_slot;")

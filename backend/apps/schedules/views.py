@@ -25,23 +25,30 @@ class SolverTriggerView(APIView):
             data = fetch_scheduling_data()
             solver = ScheduleSolver(data)
             solver.build_model()
-            solver_status = solver.solve(time_limit_seconds=120.0)
+            status_obj = solver.solve()
+            solver_status = solver.solver.StatusName(status_obj)
             
             saved_count = 0
+            warnings = []
             if solver_status in ["OPTIMAL", "FEASIBLE"]:
-                saved_count = save_schedule_entries(solver)
+                entries, warnings = solver.get_results()
+                if entries:
+                    save_schedule_entries(entries)
+                    saved_count = len(entries)
             
             duration = round(time.time() - start_time, 2)
             
             return Response({
                 "status": solver_status,
-                "objective_value": float(solver.solver.ObjectiveValue()),
+                "objective_value": float(solver.solver.ObjectiveValue()) if solver_status in ["OPTIMAL", "FEASIBLE"] else None,
                 "total_entries_created": saved_count,
                 "solve_duration_seconds": duration,
+                "warnings": warnings,
                 "message": f"Routine generation finished with status '{solver_status}' in {duration}s."
             }, status=status.HTTP_200_OK if solver_status in ["OPTIMAL", "FEASIBLE"] else status.HTTP_422_UNPROCESSABLE_ENTITY)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class CohortRoutineView(APIView):
     """

@@ -223,36 +223,35 @@ class ScheduleSolver:
                 print(f"[WARNING] Block {b_id} (Subject {b['subject']['code']}) has no allowed rooms or valid slots.")
                 # We can still add a dummy solver check, but this will fail.
 
-        # Helper: slot occupancy for block b at slot s (regardless of room)
-        # We define this as a Boolean variable linked via an equality constraint
-        # to avoid combinatorial term explosion in the solver's flat-expansion layer.
+        # Helper: slot occupancy for block b at (day, slot_id) regardless of room
         self.X_slot = {}
         for b in self.blocks:
             b_id = b["block_id"]
             for s in self.academic_slots:
+                day = s["day"]
                 s_id = s["slot_id"]
-                # Collect variables
                 slot_vars = []
                 for cg_idx, cg in enumerate(b["valid_groups"]):
-                    if any(x["slot_id"] == s_id for x in cg):
+                    if any(x["day"] == day and x["slot_id"] == s_id for x in cg):
                         for r in b["allowed_rooms"]:
                             slot_vars.append(self.y[(b_id, cg_idx, r["id"])])
                 if slot_vars:
-                    self.X_slot[(b_id, s_id)] = self.model.NewBoolVar(f"X_slot_b{b_id}_s{s_id}")
-                    self.model.Add(self.X_slot[(b_id, s_id)] == sum(slot_vars))
+                    self.X_slot[(b_id, day, s_id)] = self.model.NewBoolVar(f"X_slot_b{b_id}_d{day}_s{s_id}")
+                    self.model.Add(self.X_slot[(b_id, day, s_id)] == sum(slot_vars))
                 else:
-                    self.X_slot[(b_id, s_id)] = 0
+                    self.X_slot[(b_id, day, s_id)] = 0
 
         # 2. Room Clash Prevention: At most one block in each room at each slot
         for r in self.rooms:
             r_id = r["id"]
             for s in self.academic_slots:
+                day = s["day"]
                 s_id = s["slot_id"]
                 room_vars = []
                 for b in self.blocks:
                     b_id = b["block_id"]
                     for cg_idx, cg in enumerate(b["valid_groups"]):
-                        if any(x["slot_id"] == s_id for x in cg):
+                        if any(x["day"] == day and x["slot_id"] == s_id for x in cg):
                             if (b_id, cg_idx, r_id) in self.y:
                                 room_vars.append(self.y[(b_id, cg_idx, r_id)])
                 if room_vars:
@@ -263,12 +262,14 @@ class ScheduleSolver:
         for f in self.faculty:
             f_id = f["id"]
             for s in self.academic_slots:
+                day = s["day"]
                 s_id = s["slot_id"]
                 fac_vars = []
                 for b in self.blocks:
                     if b["workload"]["faculty_id"] == f_id:
-                        if isinstance(self.X_slot[(b["block_id"], s_id)], cp_model.LinearExpr) or self.X_slot[(b["block_id"], s_id)] != 0:
-                            fac_vars.append(self.X_slot[(b["block_id"], s_id)])
+                        expr = self.X_slot[(b["block_id"], day, s_id)]
+                        if isinstance(expr, cp_model.LinearExpr) or expr != 0:
+                            fac_vars.append(expr)
                 if fac_vars:
                     self.model.Add(sum(fac_vars) <= 1)
 
@@ -276,18 +277,18 @@ class ScheduleSolver:
         for c in self.cohorts:
             c_id = c["id"]
             for s in self.academic_slots:
+                day = s["day"]
                 s_id = s["slot_id"]
                 cohort_vars = []
                 for b in self.blocks:
                     if b["workload"].get("cohort_id") == c_id:
-                        if isinstance(self.X_slot[(b["block_id"], s_id)], cp_model.LinearExpr) or self.X_slot[(b["block_id"], s_id)] != 0:
-                            cohort_vars.append(self.X_slot[(b["block_id"], s_id)])
+                        expr = self.X_slot[(b["block_id"], day, s_id)]
+                        if isinstance(expr, cp_model.LinearExpr) or expr != 0:
+                            cohort_vars.append(expr)
                 if cohort_vars:
                     self.model.Add(sum(cohort_vars) <= 1)
 
         # 5. NEP Elective Clashing (Student-Level clash prevention)
-        # Group students by their unique subject schedule (cohort + electives)
-        # to avoid redundant constraints and speed up model build/solve.
         unique_student_schedules = {}
         for st in self.students:
             st_cohort = st["cohort_id"]
@@ -298,22 +299,20 @@ class ScheduleSolver:
             unique_student_schedules[key].append(st["id"])
 
         for (st_cohort, st_electives), st_ids in unique_student_schedules.items():
-            # Find all blocks this schedule must attend
             student_blocks = []
             for b in self.blocks:
                 w = b["workload"]
-                # Core class for student's cohort
                 if w.get("cohort_id") == st_cohort:
                     student_blocks.append(b)
-                # Elective class registered by student
                 elif w.get("elective_subject_id") is not None and w["elective_subject_id"] in st_electives:
                     student_blocks.append(b)
 
             for s in self.academic_slots:
+                day = s["day"]
                 s_id = s["slot_id"]
                 student_vars = []
                 for b in student_blocks:
-                    expr = self.X_slot[(b["block_id"], s_id)]
+                    expr = self.X_slot[(b["block_id"], day, s_id)]
                     if isinstance(expr, cp_model.LinearExpr) or expr != 0:
                         student_vars.append(expr)
                 if student_vars:
@@ -324,9 +323,6 @@ class ScheduleSolver:
         self.penalties = []
 
         # A. Smart Classroom Fallbacks
-        # We check each room to see if it is a smart room.
-        # LH_301 is designated as a smart classroom (has Projector capability in generation script).
-        # In general, if name contains "301" or "smart" or "lab", it is a smart room.
         def is_smart_room(room):
             name = room["name"].lower()
             return "301" in name or "smart" in name or "lab" in name
@@ -342,36 +338,29 @@ class ScheduleSolver:
                     smart = is_smart_room(r)
                     
                     if req == "MUST_HAVE" and not smart:
-                        # Penalty: 100,000 points
                         self.penalties.append(var * 100000)
                     elif req == "PREFERRED" and not smart:
-                        # Penalty: 50 points
                         self.penalties.append(var * 50)
                     elif req == "NOT_REQUIRED" and smart:
-                        # Penalty: 10 points (prevents wasting smart rooms)
                         self.penalties.append(var * 10)
 
         # B. Spacing Out Heavy Subjects
-        # Student cohort has two heavy subjects back-to-back on same day
-        # For each cohort, day, and adjacent slot numbers:
         for c in self.cohorts:
             c_id = c["id"]
             for day in range(1, 6):
                 slots_in_day = self.academic_slots_by_day[day]
-                # Check consecutive academic slots
                 for i in range(len(slots_in_day) - 1):
                     s1 = slots_in_day[i]
                     s2 = slots_in_day[i+1]
                     
-                    # Heavy slot indicators
                     heavy_vars_s1 = []
                     heavy_vars_s2 = []
                     for b in self.blocks:
                         if b["workload"].get("cohort_id") == c_id and b["subject"]["is_heavy_cognitive"]:
-                            if (b["block_id"], s1["slot_id"]) in self.X_slot:
-                                heavy_vars_s1.append(self.X_slot[(b["block_id"], s1["slot_id"])])
-                            if (b["block_id"], s2["slot_id"]) in self.X_slot:
-                                heavy_vars_s2.append(self.X_slot[(b["block_id"], s2["slot_id"])])
+                            if (b["block_id"], day, s1["slot_id"]) in self.X_slot:
+                                heavy_vars_s1.append(self.X_slot[(b["block_id"], day, s1["slot_id"])])
+                            if (b["block_id"], day, s2["slot_id"]) in self.X_slot:
+                                heavy_vars_s2.append(self.X_slot[(b["block_id"], day, s2["slot_id"])])
 
                     if heavy_vars_s1 and heavy_vars_s2:
                         y1 = self.model.NewBoolVar(f"heavy_c{c_id}_d{day}_s{s1['slot_number']}")
@@ -384,7 +373,6 @@ class ScheduleSolver:
                         self.penalties.append(clash_var * 100)
 
         # C. Faculty Consecutive Hours Limit
-        # Faculty assigned to 3 or more consecutive academic hours
         for f in self.faculty:
             f_id = f["id"]
             for day in range(1, 6):
@@ -394,15 +382,14 @@ class ScheduleSolver:
                     s2 = slots_in_day[i+1]
                     s3 = slots_in_day[i+2]
                     
-                    # Indicator variables for faculty teaching
                     f_vars_s1 = []
                     f_vars_s2 = []
                     f_vars_s3 = []
                     for b in self.blocks:
                         if b["workload"]["faculty_id"] == f_id:
-                            f_vars_s1.append(self.X_slot[(b["block_id"], s1["slot_id"])])
-                            f_vars_s2.append(self.X_slot[(b["block_id"], s2["slot_id"])])
-                            f_vars_s3.append(self.X_slot[(b["block_id"], s3["slot_id"])])
+                            f_vars_s1.append(self.X_slot[(b["block_id"], day, s1["slot_id"])])
+                            f_vars_s2.append(self.X_slot[(b["block_id"], day, s2["slot_id"])])
+                            f_vars_s3.append(self.X_slot[(b["block_id"], day, s3["slot_id"])])
 
                     if f_vars_s1 and f_vars_s2 and f_vars_s3:
                         z1 = self.model.NewBoolVar(f"fac_{f_id}_d{day}_s{s1['slot_number']}")
@@ -417,7 +404,6 @@ class ScheduleSolver:
                         self.penalties.append(consec_var * 80)
 
         # D. Faculty Slot Preferences
-        # Penalty of 30 if assigned to preferred_not slot
         for b in self.blocks:
             b_id = b["block_id"]
             fac_id = b["workload"]["faculty_id"]
@@ -427,7 +413,6 @@ class ScheduleSolver:
                 unpref_set = set((slot[0], slot[1]) for slot in unpref_slots)
                 
                 for cg_idx, cg in enumerate(b["valid_groups"]):
-                    # Count unpreferred slots in this group
                     unpref_count = sum(1 for s in cg if (s["day"], s["slot_number"]) in unpref_set)
                     if unpref_count > 0:
                         for r in b["allowed_rooms"]:
@@ -435,7 +420,6 @@ class ScheduleSolver:
                             self.penalties.append(var * unpref_count * 30)
 
         # E. Cohort Gaps
-        # Cohort has empty slots between scheduled classes on a day
         for c in self.cohorts:
             c_id = c["id"]
             for day in range(1, 6):
@@ -444,16 +428,17 @@ class ScheduleSolver:
                 if n_slots <= 2:
                     continue
                 
-                # Class indicators for each slot
                 W = {}
                 for idx, s in enumerate(slots_in_day):
+                    day = s["day"]
                     cohort_slot_vars = []
                     for b in self.blocks:
                         if b["workload"].get("cohort_id") == c_id:
-                            cohort_slot_vars.append(self.X_slot[(b["block_id"], s["slot_id"])])
+                            cohort_slot_vars.append(self.X_slot[(b["block_id"], day, s["slot_id"])])
                     
                     W[idx] = self.model.NewBoolVar(f"W_{c_id}_d{day}_p{idx}")
                     self.model.Add(W[idx] == sum(cohort_slot_vars))
+
 
                 # Gaps checking (from index 1 to n_slots - 2)
                 for g in range(1, n_slots - 1):
