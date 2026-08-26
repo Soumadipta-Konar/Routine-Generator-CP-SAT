@@ -75,7 +75,10 @@ export default function ExcelUploader({ onUploadSuccess = () => {} }) {
       setResult(res);
       onUploadSuccess();
     } catch (err) {
-      const errMsg = err.response?.data?.details || err.response?.data?.message || err.response?.data?.error || err.message;
+      const data = err.response?.data;
+      const errMsg = (data?.details && data.details.length > 0)
+        ? data.details
+        : data?.message || data?.errors || data?.error || err.message;
       setError(errMsg);
     } finally {
       setUploading(false);
