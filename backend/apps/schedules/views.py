@@ -32,8 +32,8 @@ class SolverTriggerView(APIView):
             print(">> Building CP-SAT mathematical model...", flush=True)
             solver.build_model()
             
-            print(">> Solving optimization constraints (time limit: 15s)...", flush=True)
-            status_obj = solver.solve(time_limit_seconds=15.0)
+            print(">> Solving optimization constraints (time limit: 60s)...", flush=True)
+            status_obj = solver.solve(time_limit_seconds=60.0)
             solver_status = solver.solver.StatusName(status_obj)
             
             saved_count = 0
