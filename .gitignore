@@ -63,3 +63,4 @@ frontend/build/
 # Local only
 docs/
 backend/staticfiles/
+.env.example
