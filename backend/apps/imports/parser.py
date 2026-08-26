@@ -203,15 +203,21 @@ def db_insert_sandbox(xls):
     try:
         db_url = os.getenv("DATABASE_URL")
         if db_url:
+            if "sslmode=" not in db_url:
+                db_url += "?sslmode=require" if "?" not in db_url else "&sslmode=require"
             conn = psycopg2.connect(db_url)
         else:
-            conn = psycopg2.connect(
-                host=os.getenv("DB_HOST", "localhost"),
-                port=os.getenv("DB_PORT", "5432"),
-                database=os.getenv("DB_NAME", "routine_generator"),
-                user=os.getenv("DB_USER", "postgres"),
-                password=os.getenv("DB_PASSWORD", "Somu1@POSTGRESQL")
-            )
+            host = os.getenv("DB_HOST", "localhost")
+            port = os.getenv("DB_PORT", "5432")
+            dbname = os.getenv("DB_NAME", "routine_generator")
+            user = os.getenv("DB_USER", "postgres")
+            password = os.getenv("DB_PASSWORD", "Somu1@POSTGRESQL")
+            try:
+                conn = psycopg2.connect(
+                    host=host, port=port, database=dbname, user=user, password=password
+                )
+            except Exception as conn_err:
+                return False, [{"sheet": "Database", "row": None, "column": None, "value": None, "error_type": "Connection_Error", "description": f"PostgreSQL database connection failed: DATABASE_URL environment variable is missing on server, and local connection to '{host}:{port}' failed. Please add DATABASE_URL to your Render Environment Variables."}]
         cursor = conn.cursor()
         
         # Read sheets

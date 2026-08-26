@@ -12,14 +12,23 @@ def get_db_connection():
     """
     db_url = os.getenv("DATABASE_URL")
     if db_url:
+        if "sslmode=" not in db_url:
+            db_url += "?sslmode=require" if "?" not in db_url else "&sslmode=require"
         return psycopg2.connect(db_url)
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "routine_generator"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "Somu1@POSTGRESQL")
-    )
+    
+    host = os.getenv("DB_HOST", "localhost")
+    port = os.getenv("DB_PORT", "5432")
+    dbname = os.getenv("DB_NAME", "routine_generator")
+    user = os.getenv("DB_USER", "postgres")
+    password = os.getenv("DB_PASSWORD", "Somu1@POSTGRESQL")
+    try:
+        return psycopg2.connect(
+            host=host, port=port, database=dbname, user=user, password=password
+        )
+    except Exception as conn_err:
+        raise ConnectionError(
+            f"Could not connect to PostgreSQL database. DATABASE_URL environment variable is not set, and connection to '{host}:{port}' failed: {conn_err}"
+        )
 
 def fetch_scheduling_data():
     """

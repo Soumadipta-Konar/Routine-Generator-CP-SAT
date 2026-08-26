@@ -28,13 +28,14 @@ class MasterWorkbookImportView(APIView):
         try:
             success, errors = run_ingestion_pipeline(tmp_path)
             if not success:
-                err_list = [f"[{e.get('sheet', 'Workbook')}] {e.get('description', 'Validation error')}" for e in errors]
+                is_db_err = any(e.get('sheet') == 'Database' or e.get('error_type') in ['Transaction_Aborted', 'Connection_Error'] for e in (errors or []))
+                err_list = [f"[{e.get('sheet', 'Workbook')}] {e.get('description', 'Validation error')}" for e in (errors or [])]
                 err_summary = " \n ".join(err_list) if err_list else "Validation failed. Please verify sheet formats."
                 return Response({
-                    "error": "VALIDATION_FAILED",
+                    "error": "DATABASE_ERROR" if is_db_err else "VALIDATION_FAILED",
                     "message": err_summary,
                     "details": errors
-                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR if is_db_err else status.HTTP_422_UNPROCESSABLE_ENTITY)
 
             return Response({
                 "success": True,
