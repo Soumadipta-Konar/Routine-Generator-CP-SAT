@@ -40,7 +40,7 @@ def validate_syntactic(xls):
     if errors:
         return False, errors
 
-    # 2. Check column headers
+    # 2. Check column headers and empty sheets
     for sheet in REQUIRED_SHEETS:
         df = pd.read_excel(xls, sheet)
         present_cols = [str(c).strip() for c in df.columns]
@@ -54,8 +54,18 @@ def validate_syntactic(xls):
                     "error_type": "Missing_Column",
                     "description": f"Sheet '{sheet}' is missing the required column header: '{req_col}'."
                 })
+        if len(df) == 0:
+            errors.append({
+                "sheet": sheet,
+                "row": None,
+                "column": None,
+                "value": None,
+                "error_type": "Empty_Sheet",
+                "description": f"Sheet '{sheet}' has headers but 0 data rows. Please fill in your data before uploading."
+            })
                 
     return len(errors) == 0, errors
+
 
 
 def validate_semantic_and_feasibility(xls):
@@ -294,35 +304,35 @@ def run_ingestion_pipeline(file_path):
     """
     if not os.path.exists(file_path):
         print(f"Error: Target workbook path '{file_path}' does not exist.")
-        return False, []
+        return False, [{"sheet": "File", "row": None, "column": None, "value": None, "error_type": "File_Not_Found", "description": f"File not found: {file_path}"}]
         
     print(f"Processing Excel Ingestion: {file_path}")
     
-    # Open excel workbook
+    # Open excel workbook with context manager to release file handle immediately
     try:
-        xls = pd.ExcelFile(file_path)
+        with pd.ExcelFile(file_path) as xls:
+            # 1. Syntactic Validation
+            print("Running Syntactic Checks...")
+            success, errors = validate_syntactic(xls)
+            if not success:
+                print("[FAIL] Syntactic checks failed.")
+                return False, errors
+                
+            # 2. Semantic & Feasibility Validation
+            print("Running Semantic & Load Feasibility Checks...")
+            success, errors = validate_semantic_and_feasibility(xls)
+            if not success:
+                print("[FAIL] Semantic and feasibility checks failed.")
+                return False, errors
+
+            # 3. Database transaction write sandbox
+            print("Writing records to PostgreSQL...")
+            success, errors = db_insert_sandbox(xls)
+            return success, errors
     except Exception as e:
-        print(f"Failed to open Excel file: {e}")
-        return False, []
+        print(f"Failed to open/process Excel file: {e}")
+        return False, [{"sheet": "File", "row": None, "column": None, "value": None, "error_type": "Read_Error", "description": f"Failed to read workbook: {str(e)}"}]
 
-    # 1. Syntactic Validation
-    print("Running Syntactic Checks...")
-    success, errors = validate_syntactic(xls)
-    if not success:
-        print("[FAIL] Syntactic checks failed.")
-        return False, errors
-        
-    # 2. Semantic & Feasibility Validation
-    print("Running Semantic & Load Feasibility Checks...")
-    success, errors = validate_semantic_and_feasibility(xls)
-    if not success:
-        print("[FAIL] Semantic and feasibility checks failed.")
-        return False, errors
-
-    # 3. Database transaction write sandbox
-    print("Writing records to PostgreSQL...")
-    success, errors = db_insert_sandbox(xls)
-    return success, errors
 
 
 if __name__ == "__main__":

@@ -32,9 +32,10 @@ export default function ExcelUploader({ onUploadSuccess }) {
       setFile(null);
       if (onUploadSuccess) onUploadSuccess();
     } catch (err) {
-      const errDetail = err.response?.data?.details || err.response?.data?.error || err.message;
+      const errDetail = err.response?.data?.message || err.response?.data?.details || err.response?.data?.error || err.message;
       setError(typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail));
     } finally {
+
       setUploading(false);
     }
   };

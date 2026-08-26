@@ -26,19 +26,32 @@ class MasterWorkbookImportView(APIView):
             tmp_path = tmp.name
 
         try:
-            results = run_ingestion_pipeline(tmp_path)
+            success, errors = run_ingestion_pipeline(tmp_path)
+            if not success:
+                err_list = [f"[{e.get('sheet', 'Workbook')}] {e.get('description', 'Validation error')}" for e in errors]
+                err_summary = " \n ".join(err_list) if err_list else "Validation failed. Please verify sheet formats."
+                return Response({
+                    "error": "VALIDATION_FAILED",
+                    "message": err_summary,
+                    "details": errors
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
             return Response({
                 "success": True,
                 "message": "Master workbook successfully parsed and database populated.",
-                "details": results
+                "details": errors
             }, status=status.HTTP_200_OK)
         except ValueError as ve:
-            return Response({"error": "VALIDATION_ERROR", "details": str(ve)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            return Response({"error": "VALIDATION_ERROR", "message": str(ve)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         except Exception as e:
-            return Response({"error": "SERVER_ERROR", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": "SERVER_ERROR", "message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+
 
 import io
 import openpyxl
