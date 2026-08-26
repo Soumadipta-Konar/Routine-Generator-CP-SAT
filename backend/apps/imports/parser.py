@@ -203,7 +203,7 @@ def db_insert_sandbox(xls):
     try:
         db_url = os.getenv("DATABASE_URL")
         if db_url:
-            conn = psycopg2.connect(db_url)
+            conn = psycopg2.connect(db_url, sslmode='require')
         else:
             conn = psycopg2.connect(
                 host=os.getenv("DB_HOST", "localhost"),
