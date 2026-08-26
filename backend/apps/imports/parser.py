@@ -227,7 +227,101 @@ def db_insert_sandbox(xls):
         subjects = pd.read_excel(xls, "Subjects").to_dict(orient="records")
         workload = pd.read_excel(xls, "Curriculum_Workload").to_dict(orient="records")
 
-        # 0. Atomic Reset of existing records with sequence restart to keep IDs consistent
+        # 0. Auto-create database schema tables if they don't exist yet on fresh DB
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS department (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) UNIQUE NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS cohort (
+                id INT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                semester INT NOT NULL,
+                size INT NOT NULL,
+                department_id INT REFERENCES department(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS faculty (
+                id INT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                contact_number VARCHAR(100),
+                max_weekly_hours INT DEFAULT 20,
+                availability_preferences JSONB,
+                department_id INT REFERENCES department(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS subject (
+                id INT PRIMARY KEY,
+                code VARCHAR(100),
+                name VARCHAR(255) NOT NULL,
+                periods_per_week INT DEFAULT 4,
+                is_heavy_cognitive BOOLEAN DEFAULT FALSE,
+                subject_type VARCHAR(50) DEFAULT 'Lecture',
+                department_id INT REFERENCES department(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS room (
+                id INT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                capacity INT NOT NULL,
+                room_type VARCHAR(50) DEFAULT 'Lecture_Hall'
+            );
+
+            CREATE TABLE IF NOT EXISTS lab_details (
+                id SERIAL PRIMARY KEY,
+                room_id INT REFERENCES room(id) ON DELETE CASCADE,
+                workstation_count INT DEFAULT 30,
+                lab_category VARCHAR(100) DEFAULT 'General Lab',
+                software_installed JSONB,
+                specialized_equipment JSONB
+            );
+
+            CREATE TABLE IF NOT EXISTS curriculum_workload (
+                id SERIAL PRIMARY KEY,
+                cohort_id INT REFERENCES cohort(id) ON DELETE CASCADE,
+                elective_subject_id INT,
+                subject_id INT REFERENCES subject(id) ON DELETE CASCADE,
+                faculty_id INT REFERENCES faculty(id) ON DELETE SET NULL,
+                weekly_periods INT DEFAULT 4,
+                smart_class_requirement VARCHAR(50) DEFAULT 'NOT_REQUIRED'
+            );
+
+            CREATE TABLE IF NOT EXISTS student (
+                id SERIAL PRIMARY KEY,
+                student_roll VARCHAR(100),
+                name VARCHAR(255),
+                cohort_id INT REFERENCES cohort(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS elective_registration (
+                id SERIAL PRIMARY KEY,
+                student_id INT REFERENCES student(id) ON DELETE CASCADE,
+                subject_id INT REFERENCES subject(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS period_slot (
+                id SERIAL PRIMARY KEY,
+                slot_number INT UNIQUE NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                start_time TIME NOT NULL,
+                end_time TIME NOT NULL,
+                is_break BOOLEAN DEFAULT FALSE
+            );
+
+            CREATE TABLE IF NOT EXISTS schedule_entry (
+                id SERIAL PRIMARY KEY,
+                day_of_week INT NOT NULL,
+                period_slot_id INT REFERENCES period_slot(id) ON DELETE CASCADE,
+                room_id INT REFERENCES room(id) ON DELETE CASCADE,
+                subject_id INT REFERENCES subject(id) ON DELETE CASCADE,
+                faculty_id INT REFERENCES faculty(id) ON DELETE SET NULL,
+                cohort_id INT REFERENCES cohort(id) ON DELETE CASCADE,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+        """)
+
+        # Reset existing records with sequence restart to keep IDs consistent
         cursor.execute("TRUNCATE TABLE schedule_entry, elective_registration, curriculum_workload, student, lab_details, room, subject, faculty, cohort, department RESTART IDENTITY CASCADE;")
 
         # 1. Load Departments dynamically
