@@ -19,6 +19,14 @@ class ScheduleAPITestCase(TestCase):
             except Exception:
                 pass
 
+    def test_metadata_endpoint(self):
+        response = self.client.get('/api/v1/schedules/meta/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('cohorts', response.data)
+        self.assertIn('faculty', response.data)
+        self.assertIn('rooms', response.data)
+        self.assertIn('subjects', response.data)
+
     def test_cohort_routine_endpoint(self):
         response = self.client.get('/api/v1/schedules/cohort/1/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)

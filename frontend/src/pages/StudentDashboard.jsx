@@ -5,10 +5,28 @@ import { api } from '../services/api';
 
 export default function StudentDashboard() {
   const [selectedCohort, setSelectedCohort] = useState(1);
+  const [cohorts, setCohorts] = useState([]);
   const [gridData, setGridData] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // Fetch metadata on mount
+  useEffect(() => {
+    const fetchMeta = async () => {
+      try {
+        const data = await api.getMetadata();
+        if (data.cohorts?.length) {
+          setCohorts(data.cohorts);
+          setSelectedCohort(data.cohorts[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load cohorts', err);
+      }
+    };
+    fetchMeta();
+  }, []);
+
   const fetchStudentRoutine = async () => {
+    if (!selectedCohort) return;
     setLoading(true);
     try {
       const res = await api.getCohortRoutine(selectedCohort);
@@ -48,12 +66,17 @@ export default function StudentDashboard() {
             onChange={(e) => setSelectedCohort(parseInt(e.target.value, 10))}
             className="bg-cream-50 border border-stone-300 rounded-xl px-3.5 py-1.5 text-xs font-semibold text-ink-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
           >
-            {Array.from({ length: 30 }, (_, i) => i + 1).map((id) => (
-              <option key={id} value={id}>
-                Section {id} (Semester {((id % 8) + 1)})
-              </option>
-            ))}
+            {cohorts.length > 0 ? (
+              cohorts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} (Semester {c.semester})
+                </option>
+              ))
+            ) : (
+              <option value={1}>Cohort #1</option>
+            )}
           </select>
+
 
           <button
             onClick={() => window.print()}

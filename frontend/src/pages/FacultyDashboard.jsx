@@ -5,10 +5,28 @@ import { api } from '../services/api';
 
 export default function FacultyDashboard() {
   const [selectedFaculty, setSelectedFaculty] = useState(1);
+  const [facultyList, setFacultyList] = useState([]);
   const [gridData, setGridData] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // Fetch metadata on mount
+  useEffect(() => {
+    const fetchMeta = async () => {
+      try {
+        const data = await api.getMetadata();
+        if (data.faculty?.length) {
+          setFacultyList(data.faculty);
+          setSelectedFaculty(data.faculty[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load faculty metadata', err);
+      }
+    };
+    fetchMeta();
+  }, []);
+
   const fetchFacultyRoutine = async () => {
+    if (!selectedFaculty) return;
     setLoading(true);
     try {
       const res = await api.getFacultyRoutine(selectedFaculty);
@@ -56,10 +74,17 @@ export default function FacultyDashboard() {
             onChange={(e) => setSelectedFaculty(parseInt(e.target.value, 10))}
             className="bg-cream-50 border border-stone-300 rounded-xl px-3.5 py-1.5 text-xs font-semibold text-ink-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
           >
-            {Array.from({ length: 80 }, (_, i) => i + 1).map((id) => (
-              <option key={id} value={id}>Prof. Faculty_{id}</option>
-            ))}
+            {facultyList.length > 0 ? (
+              facultyList.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name} ({f.max_weekly_hours}h max)
+                </option>
+              ))
+            ) : (
+              <option value={1}>Prof. Faculty_1</option>
+            )}
           </select>
+
 
           <button
             onClick={() => window.print()}

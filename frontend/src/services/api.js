@@ -11,6 +11,12 @@ const apiClient = axios.create({
 });
 
 export const api = {
+  // Fetch dynamic metadata (cohorts, faculty, rooms) from DB
+  getMetadata: async () => {
+    const response = await apiClient.get('/schedules/meta/');
+    return response.data;
+  },
+
   // Trigger Solver
   triggerSolver: async () => {
     const response = await apiClient.post('/schedules/solver/generate/');

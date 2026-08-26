@@ -252,3 +252,36 @@ class ManualOverrideView(APIView):
             "success": True,
             "message": f"Schedule entry #{entry_id} successfully moved to Day {target_day}, Period {target_slot}."
         }, status=status.HTTP_200_OK)
+
+class MetadataView(APIView):
+    """
+    GET /api/v1/schedules/meta/
+    Returns dynamic lists of Cohorts, Faculty, Rooms, and Subjects for frontend dropdowns.
+    """
+    def get(self, request):
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cur.execute("SELECT id, name, semester, size, department_id FROM cohort ORDER BY id;")
+        cohorts = [dict(r) for r in cur.fetchall()]
+        
+        cur.execute("SELECT id, name, contact_number, department_id, max_weekly_hours FROM faculty ORDER BY id;")
+        faculty = [dict(r) for r in cur.fetchall()]
+
+        
+        cur.execute("SELECT id, name, capacity, room_type FROM room ORDER BY id;")
+        rooms = [dict(r) for r in cur.fetchall()]
+        
+        cur.execute("SELECT id, code, name, subject_type, periods_per_week, is_heavy_cognitive FROM subject ORDER BY id;")
+        subjects = [dict(r) for r in cur.fetchall()]
+        
+        cur.close()
+        conn.close()
+        
+        return Response({
+            "cohorts": cohorts,
+            "faculty": faculty,
+            "rooms": rooms,
+            "subjects": subjects
+        }, status=status.HTTP_200_OK)
+

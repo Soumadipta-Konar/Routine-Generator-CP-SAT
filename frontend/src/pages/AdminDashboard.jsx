@@ -10,12 +10,30 @@ export default function AdminDashboard() {
   const [filterType, setFilterType] = useState('cohort'); // 'cohort' | 'faculty' | 'room'
   const [selectedId, setSelectedId] = useState(1);
   const [gridData, setGridData] = useState({});
+  const [meta, setMeta] = useState({ cohorts: [], faculty: [], rooms: [] });
   const [loading, setLoading] = useState(false);
   const [solving, setSolving] = useState(false);
   const [solverResult, setSolverResult] = useState(null);
   const [banner, setBanner] = useState({ error: null, success: false, message: '' });
   const [overrideEntry, setOverrideEntry] = useState(null);
   const [showUploader, setShowUploader] = useState(false);
+
+  // Fetch dynamic metadata (Cohorts, Faculty, Rooms)
+  const fetchMeta = async () => {
+    try {
+      const data = await api.getMetadata();
+      setMeta(data);
+      if (data.cohorts?.length && !selectedId) {
+        setSelectedId(data.cohorts[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to load metadata', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchMeta();
+  }, []);
 
   // Fetch routine based on current filter selection
   const fetchRoutine = async () => {
@@ -40,6 +58,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchRoutine();
   }, [filterType, selectedId]);
+
 
   // Run Solver
   const handleRunSolver = async () => {
@@ -191,16 +210,35 @@ export default function AdminDashboard() {
             onChange={(e) => setSelectedId(parseInt(e.target.value, 10))}
             className="bg-cream-50 border border-stone-300 rounded-xl px-3.5 py-1.5 text-xs font-semibold text-ink-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
           >
-            {filterType === 'cohort' && Array.from({ length: 30 }, (_, i) => i + 1).map((id) => (
-              <option key={id} value={id}>Cohort #{id} (Section Sem {((id % 8) + 1)})</option>
-            ))}
-            {filterType === 'faculty' && Array.from({ length: 80 }, (_, i) => i + 1).map((id) => (
-              <option key={id} value={id}>Prof. Faculty_{id}</option>
-            ))}
-            {filterType === 'room' && Array.from({ length: 30 }, (_, i) => i + 1).map((id) => (
-              <option key={id} value={id}>{id <= 5 ? `AUD_${id} (Auditorium)` : id > 25 ? `LAB_${id} (Computer Lab)` : `LH_${id} (Lecture Hall)`}</option>
-            ))}
+            {filterType === 'cohort' && (
+              meta.cohorts?.length > 0 ? (
+                meta.cohorts.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} (Semester {c.semester} • Size: {c.size})</option>
+                ))
+              ) : (
+                <option value={1}>Cohort #1</option>
+              )
+            )}
+            {filterType === 'faculty' && (
+              meta.faculty?.length > 0 ? (
+                meta.faculty.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name} ({f.max_weekly_hours}h/wk max)</option>
+                ))
+              ) : (
+                <option value={1}>Faculty #1</option>
+              )
+            )}
+            {filterType === 'room' && (
+              meta.rooms?.length > 0 ? (
+                meta.rooms.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name} — {r.room_type} (Cap: {r.capacity})</option>
+                ))
+              ) : (
+                <option value={1}>Room #1</option>
+              )
+            )}
           </select>
+
 
           <button
             onClick={fetchRoutine}
