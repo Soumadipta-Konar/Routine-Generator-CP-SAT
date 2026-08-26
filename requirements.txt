@@ -3,3 +3,6 @@ openpyxl
 psycopg2-binary
 python-dotenv
 ortools
+django
+djangorestframework
+django-cors-headers
