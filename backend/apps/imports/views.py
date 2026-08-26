@@ -39,3 +39,55 @@ class MasterWorkbookImportView(APIView):
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+import io
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+from django.http import HttpResponse
+
+class TemplateDownloadView(APIView):
+    """
+    GET /api/v1/imports/download-template/
+    Generates and returns a clean, formatted blank Excel workbook with all 5 required sheets.
+    """
+    def get(self, request):
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)  # Remove default sheet
+        
+        header_font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1C1917", end_color="1C1917", fill_type="solid")
+        align_center = Alignment(horizontal="center", vertical="center")
+        
+        sheets_data = {
+            "Cohorts": ["Cohort_ID", "Name", "Semester", "Size", "Department"],
+            "Faculty": ["Faculty_ID", "Name", "Contact_Number", "Email", "Department", "Max_Weekly_Hours"],
+            "Rooms": ["Room_ID", "Name", "Capacity", "Room_Type"],
+            "Subjects": ["Subject_ID", "Code", "Name", "Subject_Type", "Is_Heavy_Cognitive", "Periods_Per_Week", "Department", "Required_Capabilities"],
+            "Curriculum_Workload": ["Mapping_ID", "Cohort_ID", "Subject_ID", "Faculty_ID", "Weekly_Periods", "Smart_Class_Requirement"],
+        }
+        
+        for sheet_name, columns in sheets_data.items():
+            ws = wb.create_sheet(title=sheet_name)
+            ws.append(columns)
+            
+            # Style header row
+            for col_idx, col_name in enumerate(columns, 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = align_center
+                
+                # Auto-adjust column width
+                ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = max(len(col_name) + 6, 16)
+                
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response['Content-Disposition'] = 'attachment; filename="master_schedule_template.xlsx"'
+        return response
+

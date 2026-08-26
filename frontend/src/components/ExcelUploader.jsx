@@ -41,15 +41,28 @@ export default function ExcelUploader({ onUploadSuccess }) {
 
   return (
     <div className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-sm transition-all">
-      <div className="flex items-center space-x-2.5 mb-3">
-        <div className="w-8 h-8 rounded-lg bg-cream-200 flex items-center justify-center text-ink-800">
-          <FileSpreadsheet className="w-4 h-4" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-8 h-8 rounded-lg bg-cream-200 flex items-center justify-center text-ink-800">
+            <FileSpreadsheet className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-ink-900 tracking-tight">Master Dataset Ingestion</h3>
+            <p className="text-[11px] text-ink-500 font-medium">Upload institutional 5-sheet workbook (.xlsx)</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-sm font-bold text-ink-900 tracking-tight">Master Dataset Ingestion</h3>
-          <p className="text-[11px] text-ink-500 font-medium">Upload institutional 5-sheet workbook (.xlsx)</p>
-        </div>
+
+        {/* Download Blank Template Button */}
+        <a
+          href="http://localhost:8000/api/v1/imports/download-template/"
+          download="master_schedule_template.xlsx"
+          className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-cream-200 hover:bg-cream-300 text-ink-800 border border-stone-300/70 transition-all shadow-2xs self-start sm:self-auto"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5 text-ink-600" />
+          <span>Download Blank Excel Template (.xlsx)</span>
+        </a>
       </div>
+
 
       {/* Drop area */}
       <div 
