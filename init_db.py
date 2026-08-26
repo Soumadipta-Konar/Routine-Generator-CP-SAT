@@ -7,13 +7,10 @@ def init_db():
         print("No DATABASE_URL found. Skipping schema initialization.")
         return
 
-    # Enforce SSL for Render
-    if "render.com" in db_url and "sslmode" not in db_url:
-        db_url += "?sslmode=require" if "?" not in db_url else "&sslmode=require"
-
+    import sys
     print("Connecting to database to initialize schema...")
     try:
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(db_url, sslmode='require')
         conn.autocommit = True
         cursor = conn.cursor()
 
@@ -44,6 +41,8 @@ def init_db():
             
     except Exception as e:
         print(f"Failed to initialize database: {e}")
+        import sys
+        sys.exit(1)
     finally:
         if 'cursor' in locals() and cursor:
             cursor.close()
