@@ -8,7 +8,7 @@ import {
   X,
   Download
 } from 'lucide-react';
-import { api } from '../services/api';
+import { api, API_BASE_URL } from '../services/api';
 
 export default function ExcelUploader({ onUploadSuccess = () => {} }) {
   const [file, setFile] = useState(null);
@@ -110,7 +110,7 @@ export default function ExcelUploader({ onUploadSuccess = () => {} }) {
         </div>
 
         <a
-          href="/api/v1/imports/download-sample/"
+          href={`${API_BASE_URL}/imports/download-sample/`}
           download
           className="inline-flex items-center space-x-2 h-9 px-3 rounded-lg text-xs font-medium bg-[#F1F2F5] dark:bg-[#1B1E26] hover:bg-[#E5E7EB] dark:hover:bg-[#2A2D37] text-[#111827] dark:text-[#F3F4F6] border border-[#E5E7EB] dark:border-[#2A2D37] transition-colors shrink-0"
         >
